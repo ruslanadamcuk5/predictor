@@ -63,6 +63,7 @@ python tools/publish_release.py app/build/outputs/apk/release/app-release.apk \
     --notes "Что нового"
 python tools/prepare_server.py
 # загрузить dist/server на alwaysdata (см. server/README.md)
+python tools/check_live.py
 ```
 
 `publish_release.py` берёт `versionName`/`versionCode` из
