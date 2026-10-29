@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Predictor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ================= HEADER ================= -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">P</div>
+      <div>
+        <div class="brand-title">Predictor</div>
+        <div class="brand-sub" id="brandSub">движок прогнозов</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="btnTest" title="Проверить связь">
+        <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 1 9 9M12 3a9 9 0 0 0-9 9m9-9v6m0 0 3-3m-3 3L9 6"/></svg>
+      </button>
+      <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Остановлен</span></div>
+    </div>
+  </header>
+
+  <!-- ================= CONTENT ================= -->
+  <main id="content">
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section class="screen active" id="screen-dashboard">
+      <div class="hero card">
+        <div class="hero-top">
+          <div>
+            <div class="hero-label">Состояние движка</div>
+            <div class="hero-state" id="heroState">Остановлен</div>
+            <div class="hero-meta" id="heroMeta">Готов к запуску</div>
+          </div>
+          <div class="hero-ring" id="heroRing">
+            <svg viewBox="0 0 100 100">
+              <circle class="ring-bg" cx="50" cy="50" r="42"></circle>
+              <circle class="ring-fg" cx="50" cy="50" r="42" id="ringFg"></circle>
+            </svg>
+            <div class="ring-label" id="ringLabel">—</div>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="btnStart">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <span>Запустить</span>
+          </button>
+          <button class="btn btn-ghost hidden" id="btnStop">
+            <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            <span>Остановить</span>
+          </button>
+          <button class="btn btn-ghost" id="btnOnce">
+            <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+            <span>Проверить</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="stat card"><div class="stat-label">Проверено</div><div class="stat-value" id="stChecked">0</div></div>
+        <div class="stat card"><div class="stat-label">Сигналов</div><div class="stat-value accent" id="stSent">0</div></div>
+        <div class="stat card"><div class="stat-label">Пропущено</div><div class="stat-value" id="stSkipped">0</div></div>
+        <div class="stat card"><div class="stat-label">Отсечено</div><div class="stat-value" id="stErrors">0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Эффективность</h3>
+          <span class="muted" id="hitRateLabel">—</span>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-val ok" id="kpiWins">0</div><div class="kpi-lbl">успешных</div></div>
+          <div class="kpi"><div class="kpi-val bad" id="kpiLosses">0</div><div class="kpi-lbl">неудачных</div></div>
+          <div class="kpi"><div class="kpi-val" id="kpiPending">0</div><div class="kpi-lbl">ожидают</div></div>
+          <div class="kpi"><div class="kpi-val" id="kpiToday">0</div><div class="kpi-lbl">сегодня</div></div>
+        </div>
+        <div class="progress"><div class="progress-fill" id="hitBar"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Последние события</h3>
+          <button class="link-btn" data-nav="logs">все логи →</button>
+        </div>
+        <div class="mini-log" id="miniLog"><div class="empty">Событий пока нет</div></div>
+      </div>
+
+      <div class="card info-card">
+        <div class="info-row"><span>Матчей в линии</span><b id="infoMatches">0</b></div>
+        <div class="info-row"><span>Обработано матчей</span><b id="infoProcessed">0</b></div>
+        <div class="info-row"><span>Последний цикл</span><b id="infoCycle">—</b></div>
+        <div class="info-row"><span>Циклов за сеанс</span><b id="infoCycles">0</b></div>
+        <div class="info-row"><span>Telegram</span><b id="infoTelegram">—</b></div>
+        <div class="info-row"><span>Версия</span><b id="infoVersion">—</b></div>
+      </div>
+    </section>
+
+    <!-- ---------- QUEUE ---------- -->
+    <section class="screen" id="screen-queue">
+      <div class="screen-head">
+        <div>
+          <h2>Очередь матчей</h2>
+          <div class="muted" id="queueMeta">Нажмите «Обновить», чтобы загрузить линию</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btnRefreshQueue">
+          <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+          <span>Обновить</span>
+        </button>
+      </div>
+      <div class="chips" id="queueFilters">
+        <button class="chip active" data-qfilter="all">Все</button>
+        <button class="chip" data-qfilter="upcoming">Скоро</button>
+        <button class="chip" data-qfilter="sent">Отправлены</button>
+        <button class="chip" data-qfilter="processed">Обработаны</button>
+      </div>
+      <div id="queueList" class="list"><div class="empty">Очередь пуста</div></div>
+    </section>
+
+    <!-- ---------- RESULTS ---------- -->
+    <section class="screen" id="screen-results">
+      <div class="screen-head">
+        <div>
+          <h2>Результаты</h2>
+          <div class="muted" id="resultsMeta">—</div>
+        </div>
+        <button class="icon-btn" id="btnExportResults" title="Выгрузить все результаты (CSV)">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Фильтр</h3><button class="link-btn" id="btnResetResults">сбросить</button></div>
+        <div class="chips" id="resQuick">
+          <button class="chip" data-quick="today">Сегодня</button>
+          <button class="chip" data-quick="7">7 дней</button>
+          <button class="chip" data-quick="30">30 дней</button>
+          <button class="chip active" data-quick="all">Всё время</button>
+        </div>
+        <div class="field">
+          <label>С даты и времени</label>
+          <input type="datetime-local" id="resFrom">
+        </div>
+        <div class="field">
+          <label>По дату и время</label>
+          <input type="datetime-local" id="resTo">
+        </div>
+        <div class="field">
+          <label>Поиск</label>
+          <input type="search" id="resSearch" placeholder="Команда или лига…" autocomplete="off">
+        </div>
+        <div class="chips wrap" id="resStatus">
+          <button class="chip active" data-status="all">Все</button>
+          <button class="chip" data-status="win">Зашли</button>
+          <button class="chip" data-status="loss">Не зашли</button>
+          <button class="chip" data-status="pending">Ожидают</button>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="stat card"><div class="stat-label">Матчей</div><div class="stat-value" id="resGames">0</div></div>
+        <div class="stat card"><div class="stat-label">Прогнозов</div><div class="stat-value" id="resPreds">0</div></div>
+        <div class="stat card"><div class="stat-label">Hit rate</div><div class="stat-value accent" id="resRate">0%</div></div>
+      </div>
+
+      <div class="card">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-val ok" id="resWins">0</div><div class="kpi-lbl">зашло</div></div>
+          <div class="kpi"><div class="kpi-val bad" id="resLosses">0</div><div class="kpi-lbl">не зашло</div></div>
+          <div class="kpi"><div class="kpi-val" id="resPending">0</div><div class="kpi-lbl">ожидает</div></div>
+          <div class="kpi"><div class="kpi-val" id="resShown">0</div><div class="kpi-lbl">в списке</div></div>
+        </div>
+      </div>
+
+      <div id="resultsList" class="list"><div class="empty">Нет игр за выбранный период</div></div>
+    </section>
+
+    <!-- ---------- LOGS ---------- -->
+    <section class="screen" id="screen-logs">
+      <div class="screen-head">
+        <div>
+          <h2>Логи</h2>
+          <div class="muted" id="logMeta">0 событий</div>
+        </div>
+        <div class="head-actions">
+          <button class="icon-btn" id="btnExportLogs" title="Выгрузить">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>
+          </button>
+          <button class="icon-btn danger" id="btnClearLogs" title="Очистить">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="search-row">
+        <input type="search" id="logSearch" placeholder="Поиск по тексту…" autocomplete="off">
+      </div>
+      <div class="chips" id="logFilters">
+        <button class="chip active" data-level="">Все</button>
+        <button class="chip" data-level="INFO">Info</button>
+        <button class="chip" data-level="WARNING">Warning</button>
+        <button class="chip" data-level="ERROR">Error</button>
+      </div>
+      <div id="logList" class="log-list"></div>
+    </section>
+
+    <!-- ---------- STATS ---------- -->
+    <section class="screen" id="screen-stats">
+      <div class="screen-head">
+        <div>
+          <h2>Статистика</h2>
+          <div class="muted" id="statsMeta">—</div>
+        </div>
+        <button class="icon-btn" id="btnResetStats" title="Сбросить счётчики">
+          <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+        </button>
+      </div>
+
+      <div class="grid-3">
+        <div class="stat card"><div class="stat-label">Всего</div><div class="stat-value" id="sTotal">0</div></div>
+        <div class="stat card"><div class="stat-label">Hit rate</div><div class="stat-value accent" id="sRate">0%</div></div>
+        <div class="stat card"><div class="stat-label">Матчей</div><div class="stat-value" id="sMatches">0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>По видам ставок</h3></div>
+        <div id="byTarget" class="by-target"><div class="empty">Нет данных</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Прогнозы</h3>
+          <span class="head-actions">
+            <span class="muted" id="predCount">0</span>
+            <button class="link-btn" data-nav="results">результаты →</button>
+          </span>
+        </div>
+        <div id="predList" class="list"><div class="empty">Прогнозов пока нет</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Экспорт</h3></div>
+        <div class="export-grid">
+          <button class="export-btn" data-export="report"><span>Отчёт</span><small>.txt</small></button>
+          <button class="export-btn" data-export="results"><span>Результаты</span><small>.csv</small></button>
+          <button class="export-btn" data-export="csv"><span>Ставки</span><small>.csv</small></button>
+          <button class="export-btn" data-export="predictions"><span>Прогнозы</span><small>.json</small></button>
+          <button class="export-btn" data-export="stats"><span>Сводка</span><small>.json</small></button>
+          <button class="export-btn" data-export="logs"><span>Логи</span><small>.txt</small></button>
+          <button class="export-btn" data-export="settings"><span>Настройки</span><small>.json</small></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- CONSTRUCTOR ---------- -->
+    <section class="screen" id="screen-constructor">
+      <div class="screen-head">
+        <div>
+          <h2>Конструктор</h2>
+          <div class="muted" id="ctorMeta">Правила прогнозов по статистике</div>
+        </div>
+        <div class="head-actions">
+          <button class="icon-btn" id="btnExportRules" title="Экспорт правил (JSON)">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>
+          </button>
+          <button class="icon-btn" id="btnImportRules" title="Импорт правил (JSON)">
+            <svg viewBox="0 0 24 24"><path d="M12 21V9m0 0 4 4m-4-4-4 4M4 4h16"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Источник прогнозов</h3></div>
+        <div class="segmented" id="ctorMode">
+          <button data-mode="builtin">Встроенный алгоритм</button>
+          <button data-mode="constructor">Конструктор</button>
+        </div>
+        <div class="field-hint mt" id="ctorModeHint">
+          Встроенный — ансамбль из 6 моделей. Конструктор — только ваши правила.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-val" id="ctorRules">0</div><div class="kpi-lbl">правил</div></div>
+          <div class="kpi"><div class="kpi-val ok" id="ctorEnabled">0</div><div class="kpi-lbl">включено</div></div>
+          <div class="kpi"><div class="kpi-val" id="ctorFired">0</div><div class="kpi-lbl">срабатываний</div></div>
+          <div class="kpi"><div class="kpi-val bad" id="ctorSkipped">0</div><div class="kpi-lbl">пропущено</div></div>
+        </div>
+      </div>
+
+      <div class="ctor-toolbar">
+        <button class="btn btn-primary btn-sm" id="btnAddRule">+ Правило</button>
+        <button class="btn btn-ghost btn-sm" id="btnPresets">Шаблоны</button>
+        <button class="btn btn-ghost btn-sm" id="btnTestRules">Тест на линии</button>
+      </div>
+
+      <div id="rulesList" class="list"><div class="empty">Правил пока нет. Нажмите «+ Правило» или выберите шаблон.</div></div>
+      <div id="ctorTest" class="card hidden"></div>
+    </section>
+
+    <!-- ---------- SETTINGS ---------- -->
+    <section class="screen" id="screen-settings">
+      <div class="screen-head">
+        <div>
+          <h2>Настройки</h2>
+          <div class="muted">Параметры движка и фильтров</div>
+        </div>
+        <button class="icon-btn" id="btnResetSettings" title="Сбросить">
+          <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Основное</h3></div>
+        <div class="field">
+          <label>Интервал опроса линии</label>
+          <div class="input-suffix"><input type="number" id="setInterval" min="5" max="600" step="1"><span>сек</span></div>
+        </div>
+        <div class="field-row">
+          <div><div class="field-title">Проверка коэффициентов</div><div class="field-hint">Отсекать ставки с невыгодным кэфом</div></div>
+          <label class="switch"><input type="checkbox" id="setOdds"><span></span></label>
+        </div>
+        <div class="field-row">
+          <div><div class="field-title">Подробный лог</div><div class="field-hint">Показывать работу всех моделей</div></div>
+          <label class="switch"><input type="checkbox" id="setVerbose"><span></span></label>
+        </div>
+        <div class="field">
+          <label>Размер ставки</label>
+          <div class="input-suffix"><input type="number" id="setBetSize" min="0.1" max="100" step="0.1"><span>%</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Источник прогнозов</h3></div>
+        <div class="segmented" id="setMode">
+          <button data-mode="builtin">Встроенный</button>
+          <button data-mode="constructor">Конструктор</button>
+        </div>
+        <div class="field-hint mt">
+          Встроенный — сигналы ансамбля моделей. Конструктор — только правила
+          из раздела «Конструктор». <button class="link-btn" data-nav="constructor">настроить →</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Telegram</h3><span class="muted">необязательно</span></div>
+        <div class="field-row">
+          <div><div class="field-title">Отправлять сигналы</div><div class="field-hint">Дублировать прогнозы в чат</div></div>
+          <label class="switch"><input type="checkbox" id="setTgEnabled"><span></span></label>
+        </div>
+        <div class="field">
+          <label>Токен бота</label>
+          <input type="text" id="setTgToken" placeholder="123456789:AA…" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Chat ID</label>
+          <input type="text" id="setTgChat" placeholder="634828723" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Пороги моделей</h3><span class="muted">0 — выключено</span></div>
+        <div id="thresholds"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Обязательные модели</h3></div>
+        <div class="chips wrap" id="requiredModels"></div>
+        <div class="field-hint mt">Сигнал принимается только если все выбранные модели активны.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Виды ставок</h3></div>
+        <div class="toggle-grid" id="allowedBets"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Партии</h3></div>
+        <div class="toggle-grid" id="allowedSets"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Общие фильтры</h3></div>
+        <div class="field">
+          <label>Минимум согласных моделей <b id="lblStrong">1</b></label>
+          <input type="range" id="setMinStrong" min="1" max="6" step="1">
+        </div>
+        <div class="field">
+          <label>Минимальное согласие <b id="lblAgreement">20%</b></label>
+          <input type="range" id="setMinAgreement" min="0" max="100" step="5">
+        </div>
+        <div class="field">
+          <label>Минимальная уверенность <b id="lblConfidence">10%</b></label>
+          <input type="range" id="setMinConfidence" min="0" max="100" step="5">
+        </div>
+        <div class="field">
+          <label>Минимум активных моделей <b id="lblActive">1</b></label>
+          <input type="range" id="setMinActive" min="1" max="6" step="1">
+        </div>
+        <div class="field">
+          <label>Базовый вес голоса <b id="lblVoteBase">0.30</b></label>
+          <input type="range" id="setVoteBase" min="0" max="100" step="5">
+        </div>
+        <div class="field">
+          <label>Минимум очных встреч <b id="lblH2H">5</b></label>
+          <input type="range" id="setMinH2H" min="1" max="20" step="1">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Параметры моделей</h3></div>
+        <div class="field">
+          <label>Серия для streak <b id="lblStreak">3</b></label>
+          <input type="range" id="setStreak" min="2" max="10" step="1">
+        </div>
+        <div class="field">
+          <label>Размер окна <b id="lblWindow">10</b></label>
+          <input type="range" id="setWindow" min="3" max="30" step="1">
+        </div>
+        <div class="field">
+          <label>Попаданий в окне <b id="lblWindowHits">6</b></label>
+          <input type="range" id="setWindowHits" min="2" max="30" step="1">
+        </div>
+        <div class="field">
+          <label>Выборка Маркова <b id="lblMarkov">5</b></label>
+          <input type="range" id="setMarkov" min="2" max="30" step="1">
+        </div>
+        <div class="field">
+          <label>Затухание свежести <b id="lblDecay">0.85</b></label>
+          <input type="range" id="setDecay" min="50" max="99" step="1">
+        </div>
+        <div class="field">
+          <label>Выборка базовой частоты <b id="lblBaseRate">10</b></label>
+          <input type="range" id="setBaseRate" min="3" max="40" step="1">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Отчёты</h3></div>
+        <div class="field-row">
+          <div><div class="field-title">Ежечасный отчёт</div></div>
+          <label class="switch"><input type="checkbox" id="setHourly"><span></span></label>
+        </div>
+        <div class="field-row">
+          <div><div class="field-title">Дневной отчёт</div></div>
+          <label class="switch"><input type="checkbox" id="setDaily"><span></span></label>
+        </div>
+        <div class="field-inline">
+          <div class="input-suffix"><input type="number" id="setDailyHour" min="0" max="23"><span>ч</span></div>
+          <div class="input-suffix"><input type="number" id="setDailyMin" min="0" max="59"><span>мин</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Уведомления</h3></div>
+        <div class="field-row">
+          <div><div class="field-title">Новый сигнал</div><div class="field-hint">Показывать в шторке</div></div>
+          <label class="switch"><input type="checkbox" id="setNotifySignal"><span></span></label>
+        </div>
+        <div class="field-row">
+          <div><div class="field-title">Результат матча</div><div class="field-hint">Когда прогноз засчитан</div></div>
+          <label class="switch"><input type="checkbox" id="setNotifyResult"><span></span></label>
+        </div>
+        <div class="field-row">
+          <div><div class="field-title">Ошибки</div><div class="field-hint">Сбои сети и цикла</div></div>
+          <label class="switch"><input type="checkbox" id="setNotifyError"><span></span></label>
+        </div>
+      </div>
+
+      <div class="card danger-zone">
+        <div class="card-head"><h3>Данные</h3></div>
+        <div class="data-actions">
+          <button class="btn btn-ghost btn-sm" data-clear="logs">Очистить логи</button>
+          <button class="btn btn-ghost btn-sm" data-clear="processed">История матчей</button>
+          <button class="btn btn-ghost btn-sm" data-clear="csv">CSV ставок</button>
+          <button class="btn btn-ghost btn-sm" data-clear="predictions">Прогнозы</button>
+        </div>
+        <div class="field-hint mt">Очистка необратима. Настройки сохраняются.</div>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn btn-primary btn-block" id="btnSaveSettings">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+          <span>Сохранить настройки</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= BOTTOM NAV ================= -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-screen="dashboard">
+      <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9zm10 7h6v-9h-6v9zM4 20h6v-5H4v5zm10-11h6V4h-6v5z"/></svg>
+      <span>Панель</span>
+    </button>
+    <button class="nav-btn" data-screen="queue">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>Очередь</span>
+    </button>
+    <button class="nav-btn" data-screen="results">
+      <svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>
+      <span>Результаты</span>
+    </button>
+    <button class="nav-btn" data-screen="logs">
+      <svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 10h8M8 14h8M8 18h5"/></svg>
+      <span>Логи</span>
+    </button>
+    <button class="nav-btn" data-screen="stats">
+      <svg viewBox="0 0 24 24"><path d="M5 20V10m7 10V4m7 16v-7"/></svg>
+      <span>Статистика</span>
+    </button>
+    <button class="nav-btn" data-screen="constructor">
+      <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h5M13 17h7M4 12h16"/><circle cx="15" cy="7" r="2"/><circle cx="11" cy="17" r="2"/></svg>
+      <span>Конструктор</span>
+    </button>
+    <button class="nav-btn" data-screen="settings">
+      <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.4 2.6a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L5 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.6h5l.4-2.6a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z"/></svg>
+      <span>Настройки</span>
+    </button>
+  </nav>
+
+  <!-- ================= MODALS ================= -->
+  <div class="modal hidden" id="ruleModal">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 id="ruleModalTitle">Правило</h3>
+        <button class="icon-btn" id="btnCloseRule" title="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="ruleModalBody"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm danger" id="btnRuleDelete">Удалить</button>
+        <button class="btn btn-ghost btn-sm" id="btnRuleCancel">Отмена</button>
+        <button class="btn btn-primary btn-sm" id="btnRuleSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="presetModal">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3>Шаблоны правил</h3>
+        <button class="icon-btn" id="btnClosePresets" title="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="presetBody"></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="importModal">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3>Импорт правил</h3>
+        <button class="icon-btn" id="btnCloseImport" title="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Вставьте JSON правил</label>
+          <textarea id="importText" class="json-area" rows="10"
+                    placeholder='{"version":1,"rules":[...]}'></textarea>
+        </div>
+        <div class="field-hint">Формат: {"version":1,"rules":[...]} или просто список правил.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" id="btnImportCancel">Отмена</button>
+        <button class="btn btn-primary btn-sm" id="btnImportApply">Импортировать</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="loader" class="loader hidden"><div class="spinner"></div></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- красный круг -->
+    <path
+        android:fillColor="#E23B4E"
+        android:pathData="M54,18a36,36 0 1,0 0.1,0z" />
+    <!-- белая буква P -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,32h16c8.8,0 15,5.6 15,13.6c0,8.4 -6.6,14.4 -15.6,14.4h-7.4v16h-8V32zM50,39.6v13h7c4.6,0 7.4,-2.4 7.4,-6.6c0,-4.2 -2.8,-6.4 -7.4,-6.4h-7z" />
+    <!-- вырез -->
+    <path
+        android:fillColor="#E23B4E"
+        android:pathData="M50.9,40.6a6.6,6.6 0 1,0 13.2,0a6.6,6.6 0 1,0 -13.2,0z" />
+</vector>

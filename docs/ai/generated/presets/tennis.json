@@ -1,0 +1,532 @@
+{
+  "sport": "tennis",
+  "name": "Большой теннис",
+  "count": 12,
+  "presets": [
+    {
+      "name": "ТБ 20.5: средний тотал обоих ≥ 22",
+      "category": "Тоталы",
+      "description": "Оба игрока в последних 5 матчах в среднем проводят 22+ гейма.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТБ 20.5: средний тотал обоих ≥ 22",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 22
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 22
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    },
+    {
+      "name": "ТБ 20.5: оба часто играют верх",
+      "category": "Тоталы",
+      "description": "Не менее 65% последних матчей обоих игроков пробивали линию 20.5 гейма.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТБ 20.5: оба часто играют верх",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 20.5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 20.5
+              },
+              "op": "gte",
+              "value": 65
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 20.5: средний тотал обоих ≤ 20",
+      "category": "Тоталы",
+      "description": "Оба игрока в последних 5 матчах в среднем не добирают до 20 геймов.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТМ 20.5: средний тотал обоих ≤ 20",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 20
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 20
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 20.5: оба часто играют низ",
+      "category": "Тоталы",
+      "description": "Не более 35% последних матчей обоих игроков пробивали линию 20.5 гейма.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТМ 20.5: оба часто играют низ",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 20.5
+              },
+              "op": "lte",
+              "value": 35
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 20.5
+              },
+              "op": "lte",
+              "value": 35
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    },
+    {
+      "name": "П1: форма и очные",
+      "category": "Исходы",
+      "description": "Игрок 1 выигрывает 60%+ последних матчей, соперник — не более 45%, а в очных чаще сильнее игрок 1.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "П1: форма и очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: форма и очные",
+      "category": "Исходы",
+      "description": "Игрок 2 выигрывает 60%+ последних матчей, соперник — не более 45%, а в очных чаще сильнее игрок 2.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "П2: форма и очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: сильный старт",
+      "category": "Исходы",
+      "description": "Игрок 1 выигрывает 65%+ первых сетов, а в очных имеет перевес.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "П1: сильный старт",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: сильный старт",
+      "category": "Исходы",
+      "description": "Игрок 2 выигрывает 65%+ первых сетов, а в очных имеет перевес.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "П2: сильный старт",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Ф1 (-2.5): уверенный фаворит",
+      "category": "Фора",
+      "description": "Игрок 1 выигрывает 60%+ матчей, средний разрыв в счёте — не меньше 3 геймов.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "Ф1 (-2.5): уверенный фаворит",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.avg_match_margin",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 3
+            }
+          ]
+        },
+        "action": {
+          "type": "handicap",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6,
+          "value": -2.5
+        }
+      }
+    },
+    {
+      "name": "Ф2 (+2.5): близкие игры",
+      "category": "Фора",
+      "description": "Игрок 2 выигрывает не менее 45% матчей, а средний разрыв в очных не больше 4 геймов.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "Ф2 (+2.5): близкие игры",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 45
+            },
+            {
+              "metric": "h2h.avg_match_margin",
+              "args": {
+                "window": 10
+              },
+              "op": "lte",
+              "value": 4
+            }
+          ]
+        },
+        "action": {
+          "type": "handicap",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6,
+          "value": 2.5
+        }
+      }
+    },
+    {
+      "name": "ТБ 20.5 + три сета",
+      "category": "Комбинированные",
+      "description": "Оба игрока часто играют три сета, а средний тотал не ниже 20 геймов.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТБ 20.5 + три сета",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 2.6
+            },
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 2.6
+            },
+            {
+              "metric": "cmp.avg_total_min",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 20
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 20.5 + два сета",
+      "category": "Комбинированные",
+      "description": "Оба игрока часто заканчивают матч в двух сетах, а средний тотал не выше 21 гейма.",
+      "source": "Betcity · теннисная линия и статистика",
+      "rule": {
+        "name": "ТМ 20.5 + два сета",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 2.3
+            },
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 2.3
+            },
+            {
+              "metric": "cmp.avg_total_max",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": 21
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 20.5
+        }
+      }
+    }
+  ]
+}

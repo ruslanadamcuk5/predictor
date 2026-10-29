@@ -1,0 +1,422 @@
+[
+  {
+    "id": "table_tennis",
+    "name": "Настольный теннис",
+    "short": "Наст. теннис",
+    "icon": "🏓",
+    "default_total": 18.5,
+    "match_total": 75.5,
+    "has_draw": false,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Победитель матча",
+        "short": "П1/П2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner2"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      }
+    ],
+    "period_word": "Партия",
+    "periods": 7
+  },
+  {
+    "id": "football",
+    "name": "Футбол",
+    "short": "Футбол",
+    "icon": "⚽",
+    "default_total": 2.5,
+    "match_total": 2.5,
+    "has_draw": true,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Исход матча 1X2",
+        "short": "1X2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "x",
+            "Ничья"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner3"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      },
+      {
+        "type": "handicap",
+        "label": "Фора матча",
+        "short": "Фора",
+        "sides": [
+          [
+            "p1",
+            "Ф1"
+          ],
+          [
+            "p2",
+            "Ф2"
+          ]
+        ],
+        "scope": "match",
+        "value": true,
+        "id": "handicap"
+      },
+      {
+        "type": "btts",
+        "label": "Обе забьют",
+        "short": "ОЗ",
+        "sides": [
+          [
+            "yes",
+            "Да"
+          ],
+          [
+            "no",
+            "Нет"
+          ]
+        ],
+        "scope": "match",
+        "id": "btts"
+      }
+    ],
+    "period_word": "Тайм",
+    "periods": 2
+  },
+  {
+    "id": "hockey",
+    "name": "Хоккей",
+    "short": "Хоккей",
+    "icon": "🏒",
+    "default_total": 5.5,
+    "match_total": 5.5,
+    "has_draw": true,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Исход матча 1X2",
+        "short": "1X2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "x",
+            "Ничья"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner3"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      },
+      {
+        "type": "handicap",
+        "label": "Фора матча",
+        "short": "Фора",
+        "sides": [
+          [
+            "p1",
+            "Ф1"
+          ],
+          [
+            "p2",
+            "Ф2"
+          ]
+        ],
+        "scope": "match",
+        "value": true,
+        "id": "handicap"
+      },
+      {
+        "type": "btts",
+        "label": "Обе забьют",
+        "short": "ОЗ",
+        "sides": [
+          [
+            "yes",
+            "Да"
+          ],
+          [
+            "no",
+            "Нет"
+          ]
+        ],
+        "scope": "match",
+        "id": "btts"
+      }
+    ],
+    "period_word": "Период",
+    "periods": 3
+  },
+  {
+    "id": "basketball",
+    "name": "Баскетбол",
+    "short": "Баскетбол",
+    "icon": "🏀",
+    "default_total": 160.5,
+    "match_total": 160.5,
+    "has_draw": false,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Победитель матча",
+        "short": "П1/П2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner2"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      },
+      {
+        "type": "handicap",
+        "label": "Фора матча",
+        "short": "Фора",
+        "sides": [
+          [
+            "p1",
+            "Ф1"
+          ],
+          [
+            "p2",
+            "Ф2"
+          ]
+        ],
+        "scope": "match",
+        "value": true,
+        "id": "handicap"
+      }
+    ],
+    "period_word": "Четверть",
+    "periods": 4
+  },
+  {
+    "id": "volleyball",
+    "name": "Волейбол",
+    "short": "Волейбол",
+    "icon": "🏐",
+    "default_total": 179.5,
+    "match_total": 179.5,
+    "has_draw": false,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Победитель матча",
+        "short": "П1/П2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner2"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      },
+      {
+        "type": "handicap",
+        "label": "Фора матча",
+        "short": "Фора",
+        "sides": [
+          [
+            "p1",
+            "Ф1"
+          ],
+          [
+            "p2",
+            "Ф2"
+          ]
+        ],
+        "scope": "match",
+        "value": true,
+        "id": "handicap"
+      }
+    ],
+    "period_word": "Партия",
+    "periods": 5
+  },
+  {
+    "id": "tennis",
+    "name": "Большой теннис",
+    "short": "Теннис",
+    "icon": "🎾",
+    "default_total": 20.5,
+    "match_total": 20.5,
+    "has_draw": false,
+    "bets": [
+      {
+        "type": "winner",
+        "label": "Победитель матча",
+        "short": "П1/П2",
+        "sides": [
+          [
+            "p1",
+            "П1"
+          ],
+          [
+            "p2",
+            "П2"
+          ]
+        ],
+        "scope": "match",
+        "id": "winner2"
+      },
+      {
+        "type": "total",
+        "label": "Тотал матча",
+        "short": "ТБ/ТМ",
+        "sides": [
+          [
+            "over",
+            "ТБ"
+          ],
+          [
+            "under",
+            "ТМ"
+          ]
+        ],
+        "scope": "match",
+        "threshold": true,
+        "id": "total"
+      },
+      {
+        "type": "handicap",
+        "label": "Фора матча",
+        "short": "Фора",
+        "sides": [
+          [
+            "p1",
+            "Ф1"
+          ],
+          [
+            "p2",
+            "Ф2"
+          ]
+        ],
+        "scope": "match",
+        "value": true,
+        "id": "handicap"
+      }
+    ],
+    "period_word": "Сет",
+    "periods": 5
+  }
+]

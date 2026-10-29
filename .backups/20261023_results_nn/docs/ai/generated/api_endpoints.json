@@ -1,0 +1,126 @@
+{
+  "api_ai": {
+    "signature": "(payload=None)",
+    "doc": ""
+  },
+  "api_analyzer": {
+    "signature": "(payload=None)",
+    "doc": ""
+  },
+  "api_auto_rules": {
+    "signature": "(payload=None)",
+    "doc": ""
+  },
+  "api_autostart": {
+    "signature": "()",
+    "doc": "Поднимает движок после перезапуска сервиса, если он был запущен."
+  },
+  "api_clear_data": {
+    "signature": "(what='all')",
+    "doc": ""
+  },
+  "api_clear_logs": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_clear_processed": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_constructor": {
+    "signature": "(sport=None)",
+    "doc": ""
+  },
+  "api_errors": {
+    "signature": "(limit=200)",
+    "doc": ""
+  },
+  "api_export": {
+    "signature": "(kind='stats')",
+    "doc": ""
+  },
+  "api_logs": {
+    "signature": "(since_id=0, limit=500, level='', search='')",
+    "doc": ""
+  },
+  "api_neural": {
+    "signature": "(payload=None)",
+    "doc": ""
+  },
+  "api_predictions": {
+    "signature": "(limit=200, sport='')",
+    "doc": ""
+  },
+  "api_queue": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_refresh_queue": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_reset_settings": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_reset_stats": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_results": {
+    "signature": "(start='', end='', search='', status='all', limit=500, sport='')",
+    "doc": ""
+  },
+  "api_run_once": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_save_constructor": {
+    "signature": "(payload)",
+    "doc": ""
+  },
+  "api_save_settings": {
+    "signature": "(payload)",
+    "doc": ""
+  },
+  "api_set_algorithm_mode": {
+    "signature": "(mode)",
+    "doc": ""
+  },
+  "api_set_sport": {
+    "signature": "(sport)",
+    "doc": ""
+  },
+  "api_settings": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_start": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_state": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_stats": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_stop": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_test_connection": {
+    "signature": "()",
+    "doc": ""
+  },
+  "api_test_constructor": {
+    "signature": "(payload=None, limit=6, sport=None)",
+    "doc": ""
+  },
+  "api_version": {
+    "signature": "()",
+    "doc": ""
+  }
+}

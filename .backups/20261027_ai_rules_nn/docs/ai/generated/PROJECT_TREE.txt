@@ -1,0 +1,159 @@
+.cursorrules
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+Predictor-1.5-AI-Context.zip
+Predictor-1.6-AI-Context.zip
+README.md
+build.gradle.kts
+build_log.txt
+gradle.properties
+local.properties
+settings.gradle.kts
+.github/
+  copilot-instructions.md
+app/
+  build.gradle.kts
+  proguard-rules.pro
+  src/
+    main/
+      AndroidManifest.xml
+      assets/
+        www/
+          app.js
+          docs.js
+          index.html
+          style.css
+      java/
+        by/
+          betcity/
+            predictor/
+              EngineService.kt
+              MainActivity.kt
+      python/
+        ai_assistant.py
+        ai_inspector.py
+        analyzer.py
+        auto_rules.py
+        constructor_engine.py
+        engine_api.py
+        nn_core.py
+        nn_trainer.py
+        predictor_core.py
+        sports.py
+        typing_extensions.py
+      res/
+        drawable/
+          ic_launcher_foreground.xml
+        mipmap-anydpi-v26/
+          ic_launcher.xml
+          ic_launcher_round.xml
+        mipmap-hdpi/
+          ic_launcher.png
+          ic_launcher_round.png
+        mipmap-mdpi/
+          ic_launcher.png
+          ic_launcher_round.png
+        mipmap-xhdpi/
+          ic_launcher.png
+          ic_launcher_round.png
+        mipmap-xxhdpi/
+          ic_launcher.png
+          ic_launcher_round.png
+        mipmap-xxxhdpi/
+          ic_launcher.png
+          ic_launcher_round.png
+        values/
+          colors.xml
+          strings.xml
+          themes.xml
+        xml/
+          file_paths.xml
+docs/
+  ai/
+    AI_PROMPT.md
+    ANALYZER.md
+    ARCHITECTURE.md
+    BUILD_RELEASE.md
+    CHANGELOG.md
+    CONSTRUCTOR.md
+    DECISIONS.md
+    GLOSSARY.md
+    PROJECT.md
+    README.md
+    ROADMAP.md
+    SPORTS.md
+    TESTING.md
+    UI.md
+    generated/
+      PROJECT_TREE.txt
+      README.md
+      api_endpoints.json
+      nn_features.json
+      sports_catalog.json
+      summary.json
+      metrics/
+        basketball.json
+        football.json
+        hockey.json
+        table_tennis.json
+        tennis.json
+        volleyball.json
+      presets/
+        basketball.json
+        football.json
+        hockey.json
+        table_tennis.json
+        tennis.json
+        volleyball.json
+tests/
+  README.md
+  check_sports_presets.py
+  run_all.py
+  test_ai.py
+  test_all_sports.py
+  test_analyzer.py
+  test_auto_rules.py
+  test_constructor.py
+  test_constructor_backend.py
+  test_engine_core.py
+  test_engine_e2e.py
+  test_full_cycle.py
+  test_live_analysis.py
+  test_nn.py
+  test_parse_stats.py
+  test_presets_new.py
+  test_results.py
+  test_results_screen.py
+  test_sports_metrics.py
+  test_sports_pipeline.py
+  test_telegram_apply.py
+  fixtures/
+    stats_page.html
+    sport_probe/
+      basketball_1.html
+      basketball_2.html
+      basketball_3.html
+      football_1.html
+      football_2.html
+      football_3.html
+      hockey_1.html
+      hockey_2.html
+      hockey_3.html
+      tennis_1.html
+      tennis_2.html
+      tennis_3.html
+      volleyball_1.html
+      volleyball_2.html
+      volleyball_3.html
+tools/
+  README.md
+  dump_ai_context.py
+  ui_harness/
+    README.md
+    app.js
+    docs.js
+    index.html
+    mock.js
+    style.css
+    sync_ui.py

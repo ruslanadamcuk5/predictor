@@ -1,0 +1,440 @@
+{
+  "sport": "basketball",
+  "name": "Баскетбол",
+  "count": 10,
+  "presets": [
+    {
+      "name": "ТБ 160.5: средний тотал обоих ≥ 165",
+      "category": "Тоталы",
+      "description": "Обе команды в последних 5 играх в среднем набирают 165+ очков на двоих.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 160.5: средний тотал обоих ≥ 165",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 165
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 165
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    },
+    {
+      "name": "ТБ 160.5: оба часто играют верх",
+      "category": "Тоталы",
+      "description": "Не менее 70% последних матчей обеих команд пробивали линию 160.5.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 160.5: оба часто играют верх",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "gte",
+              "value": 70
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "gte",
+              "value": 70
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 160.5: средний тотал обоих ≤ 155",
+      "category": "Тоталы",
+      "description": "Обе команды в последних 5 играх в среднем не добирают до 155 очков на двоих.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 160.5: средний тотал обоих ≤ 155",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 155
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 155
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 160.5: оба часто играют низ",
+      "category": "Тоталы",
+      "description": "Не более 30% последних матчей обеих команд пробивали линию 160.5.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 160.5: оба часто играют низ",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "lte",
+              "value": 30
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "lte",
+              "value": 30
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    },
+    {
+      "name": "П1: домашняя форма",
+      "category": "Исходы",
+      "description": "Команда 1 выигрывает 60%+ последних игр, соперник — не более 45%.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "П1: домашняя форма",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: гостевая форма",
+      "category": "Исходы",
+      "description": "Команда 2 выигрывает 60%+ последних игр, соперник — не более 45%.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "П2: гостевая форма",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Ф1 (-5.5): уверенный фаворит",
+      "category": "Фора",
+      "description": "Команда 1 выигрывает 65%+ игр, средний разрыв в счёте — не меньше 5 очков.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "Ф1 (-5.5): уверенный фаворит",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "p.recent.avg_match_margin",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        "action": {
+          "type": "handicap",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6,
+          "value": -5.5
+        }
+      }
+    },
+    {
+      "name": "Ф2 (+5.5): близкие игры",
+      "category": "Фора",
+      "description": "Команда 2 выигрывает не менее 40% игр, а средний разрыв в очных не больше 8 очков.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "Ф2 (+5.5): близкие игры",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 40
+            },
+            {
+              "metric": "h2h.avg_match_margin",
+              "args": {
+                "window": 10
+              },
+              "op": "lte",
+              "value": 8
+            }
+          ]
+        },
+        "action": {
+          "type": "handicap",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6,
+          "value": 5.5
+        }
+      }
+    },
+    {
+      "name": "ТБ 160.5 + форма хозяев",
+      "category": "Комбинированные",
+      "description": "Команда 1 в форме, обе команды часто играют верх — берём тотал.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 160.5 + форма хозяев",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "gte",
+              "value": 60
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 160.5 + форма гостей",
+      "category": "Комбинированные",
+      "description": "Команда 2 в форме, обе команды часто играют низ — берём ТМ.",
+      "source": "Betcity · баскетбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 160.5 + форма гостей",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 55
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "lte",
+              "value": 40
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 160.5
+              },
+              "op": "lte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 160.5
+        }
+      }
+    }
+  ]
+}

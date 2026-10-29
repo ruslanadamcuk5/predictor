@@ -1,0 +1,17 @@
+# Betcity Predictor — правила для Cursor
+
+Полный контекст: `AGENTS.md`, `CONTEXT.md`, `docs/ai/`.
+Отвечай по-русски, UI — русский, код — английский.
+
+Коротко:
+
+- один активный вид спорта, правила видов отдельно;
+- TT-парсер и модели не менять без TT-регрессий;
+- backup в `.backups/` перед крупными правками (git нет);
+- версия в `engine_api.py`, `app/build.gradle.kts`, `README.md`,
+  `docs/ai/CHANGELOG.md`;
+- pip не использовать, пакеты вендорены;
+- мост Kotlin↔JS синхронный;
+- тесты: `python tests\run_all.py --offline`;
+- UI-стенд: `python tools\ui_harness\sync_ui.py`;
+- контекст: `python tools\dump_ai_context.py`.

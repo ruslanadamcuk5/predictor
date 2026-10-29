@@ -1,0 +1,469 @@
+{
+  "sport": "volleyball",
+  "name": "Волейбол",
+  "count": 10,
+  "presets": [
+    {
+      "name": "ТБ 179.5: средний тотал обоих ≥ 185",
+      "category": "Тоталы",
+      "description": "Обе команды в последних 5 матчах в среднем набирают 185+ очков на двоих.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 179.5: средний тотал обоих ≥ 185",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 185
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 185
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    },
+    {
+      "name": "ТБ 179.5: оба часто играют верх",
+      "category": "Тоталы",
+      "description": "Не менее 65% последних матчей обеих команд пробивали линию 179.5.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 179.5: оба часто играют верх",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 179.5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 179.5
+              },
+              "op": "gte",
+              "value": 65
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 179.5: средний тотал обоих ≤ 175",
+      "category": "Тоталы",
+      "description": "Обе команды в последних 5 матчах в среднем не добирают до 175 очков на двоих.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 179.5: средний тотал обоих ≤ 175",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 175
+            },
+            {
+              "metric": "p.recent.avg_match_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 175
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 179.5: оба часто играют низ",
+      "category": "Тоталы",
+      "description": "Не более 35% последних матчей обеих команд пробивали линию 179.5.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 179.5: оба часто играют низ",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 179.5
+              },
+              "op": "lte",
+              "value": 35
+            },
+            {
+              "metric": "p.recent.match_over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 179.5
+              },
+              "op": "lte",
+              "value": 35
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    },
+    {
+      "name": "П1: домашняя форма и очные",
+      "category": "Исходы",
+      "description": "Команда 1 выигрывает 60%+ последних игр, соперник — не более 45%, а в очных чаще сильнее команда 1.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "П1: домашняя форма и очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: гостевая форма и очные",
+      "category": "Исходы",
+      "description": "Команда 2 выигрывает 60%+ последних игр, соперник — не более 45%, а в очных чаще сильнее команда 2.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "П2: гостевая форма и очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 45
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: сильная первая партия",
+      "category": "Исходы",
+      "description": "Команда 1 выигрывает 65%+ первых партий и 60%+ всех партий, соперник слабо стартует.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "П1: сильная первая партия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "p.recent.set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p1",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: сильная первая партия",
+      "category": "Исходы",
+      "description": "Команда 2 выигрывает 65%+ первых партий и 60%+ всех партий, соперник слабо стартует.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "П2: сильная первая партия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 65
+            },
+            {
+              "metric": "p.recent.set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            "match"
+          ],
+          "side": "p2",
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 179.5 + длинные матчи",
+      "category": "Комбинированные",
+      "description": "Обе команды часто играют 4-5 партий, а средний тотал не ниже 175 очков.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТБ 179.5 + длинные матчи",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 3.8
+            },
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 3.8
+            },
+            {
+              "metric": "cmp.avg_total_min",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 175
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "over",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    },
+    {
+      "name": "ТМ 179.5 + короткие матчи",
+      "category": "Комбинированные",
+      "description": "Обе команды часто заканчивают 3-0/3-1, а средний тотал не выше 180 очков.",
+      "source": "Betcity · волейбольная линия и статистика",
+      "rule": {
+        "name": "ТМ 179.5 + короткие матчи",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 3.4
+            },
+            {
+              "metric": "p.recent.avg_sets",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 3.4
+            },
+            {
+              "metric": "cmp.avg_total_max",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": 180
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            "match"
+          ],
+          "side": "under",
+          "confidence": 0.6,
+          "threshold": 179.5
+        }
+      }
+    }
+  ]
+}

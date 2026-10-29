@@ -1,0 +1,1238 @@
+{
+  "sport": "basketball",
+  "name": "Баскетбол",
+  "default_total": 160.5,
+  "match_total": 160.5,
+  "period_word": "Четверть",
+  "bets": [
+    {
+      "type": "winner",
+      "label": "Победитель матча",
+      "short": "П1/П2",
+      "sides": [
+        [
+          "p1",
+          "П1"
+        ],
+        [
+          "p2",
+          "П2"
+        ]
+      ],
+      "scope": "match",
+      "id": "winner2"
+    },
+    {
+      "type": "total",
+      "label": "Тотал матча",
+      "short": "ТБ/ТМ",
+      "sides": [
+        [
+          "over",
+          "ТБ"
+        ],
+        [
+          "under",
+          "ТМ"
+        ]
+      ],
+      "scope": "match",
+      "threshold": true,
+      "id": "total"
+    },
+    {
+      "type": "handicap",
+      "label": "Фора матча",
+      "short": "Фора",
+      "sides": [
+        [
+          "p1",
+          "Ф1"
+        ],
+        [
+          "p2",
+          "Ф2"
+        ]
+      ],
+      "scope": "match",
+      "value": true,
+      "id": "handicap"
+    }
+  ],
+  "side_labels": {
+    "p1": "команды 1",
+    "p2": "команды 2"
+  },
+  "args": {
+    "side": {
+      "label": "Игрок",
+      "kind": "select",
+      "default": "p1",
+      "options": [
+        [
+          "p1",
+          "Игрок 1"
+        ],
+        [
+          "p2",
+          "Игрок 2"
+        ]
+      ]
+    },
+    "window": {
+      "label": "Игр",
+      "kind": "number",
+      "default": 5,
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    "set": {
+      "label": "Партия",
+      "kind": "select",
+      "default": 1,
+      "options": [
+        [
+          1,
+          "1-я"
+        ],
+        [
+          2,
+          "2-я"
+        ],
+        [
+          3,
+          "3-я"
+        ],
+        [
+          4,
+          "4-я"
+        ],
+        [
+          5,
+          "5-я"
+        ]
+      ]
+    },
+    "threshold": {
+      "label": "Тотал",
+      "kind": "number",
+      "default": 18.5,
+      "min": 0,
+      "max": 100,
+      "step": 0.5
+    }
+  },
+  "operators": {
+    "number": [
+      [
+        "gt",
+        "Больше"
+      ],
+      [
+        "gte",
+        "Больше или равно"
+      ],
+      [
+        "lt",
+        "Меньше"
+      ],
+      [
+        "lte",
+        "Меньше или равно"
+      ],
+      [
+        "eq",
+        "Равно"
+      ],
+      [
+        "neq",
+        "Не равно"
+      ],
+      [
+        "between",
+        "Между"
+      ],
+      [
+        "exists",
+        "Есть данные"
+      ],
+      [
+        "not_exists",
+        "Нет данных"
+      ]
+    ],
+    "string": [
+      [
+        "eq",
+        "Равно"
+      ],
+      [
+        "neq",
+        "Не равно"
+      ],
+      [
+        "contains",
+        "Содержит"
+      ],
+      [
+        "not_contains",
+        "Не содержит"
+      ],
+      [
+        "in",
+        "Одно из"
+      ],
+      [
+        "not_in",
+        "Не одно из"
+      ],
+      [
+        "starts_with",
+        "Начинается с"
+      ],
+      [
+        "ends_with",
+        "Заканчивается на"
+      ],
+      [
+        "exists",
+        "Есть"
+      ],
+      [
+        "not_exists",
+        "Нет"
+      ]
+    ],
+    "enum": [
+      [
+        "eq",
+        "Равно"
+      ],
+      [
+        "neq",
+        "Не равно"
+      ],
+      [
+        "in",
+        "Одно из"
+      ],
+      [
+        "not_in",
+        "Не одно из"
+      ],
+      [
+        "exists",
+        "Есть"
+      ],
+      [
+        "not_exists",
+        "Нет"
+      ]
+    ],
+    "bool": [
+      [
+        "is",
+        "Равно"
+      ],
+      [
+        "exists",
+        "Есть"
+      ],
+      [
+        "not_exists",
+        "Нет"
+      ]
+    ]
+  },
+  "enum_labels": {
+    "p1": "Игрок 1",
+    "draw": "Ничья",
+    "p2": "Игрок 2",
+    "tie": "Равно",
+    "win": "Победа",
+    "loss": "Поражение",
+    "0": "Понедельник",
+    "1": "Вторник",
+    "2": "Среда",
+    "3": "Четверг",
+    "4": "Пятница",
+    "5": "Суббота",
+    "6": "Воскресенье"
+  },
+  "metrics": [
+    {
+      "id": "h2h.count",
+      "label": "Сколько очных встреч найдено",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": "До 10 последних встреч"
+    },
+    {
+      "id": "h2h.wins",
+      "label": "Побед {side} в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10
+      },
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "h2h.win_rate",
+      "label": "Процент побед {side} в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "h2h.streak",
+      "label": "Текущая серия побед {side} в очных",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "side": "p1"
+      },
+      "unit": "игр",
+      "hint": ""
+    },
+    {
+      "id": "h2h.last_winner",
+      "label": "Победитель последней очной встречи",
+      "group": "Очные встречи",
+      "type": "enum",
+      "args": {},
+      "unit": "",
+      "hint": "",
+      "options": [
+        [
+          "p1",
+          "Игрок 1"
+        ],
+        [
+          "draw",
+          "Ничья"
+        ],
+        [
+          "p2",
+          "Игрок 2"
+        ]
+      ]
+    },
+    {
+      "id": "h2h.last_match_total",
+      "label": "Тотал последней очной встречи",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {},
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_match_total",
+      "label": "Средний тотал матча в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_set_total",
+      "label": "Средний тотал {set} четверти в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10,
+        "set": 1
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_set_points",
+      "label": "Средние очки {side} в {set} четверти очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10,
+        "set": 1
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.set_win_rate",
+      "label": "Процент побед {side} в {set} четверти очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10,
+        "set": 1
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "h2h.over_rate",
+      "label": "Доля ТБ{threshold} в {set} четверти очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10,
+        "set": 1,
+        "threshold": 18.5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "h2h.match_over_rate",
+      "label": "Доля матчей с тоталом выше {threshold} в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10,
+        "threshold": 75.5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_sets",
+      "label": "Среднее число четвертей в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "партий",
+      "hint": ""
+    },
+    {
+      "id": "h2h.five_set_rate",
+      "label": "Доля матчей из 5 четвертей в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_margin",
+      "label": "Средний разрыв в четвертьх очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.avg_match_margin",
+      "label": "Средний разрыв в счёте матча в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.days_since_last",
+      "label": "Дней с последней очной встречи",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {},
+      "unit": "дн.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.max_match_total",
+      "label": "Максимальный тотал матча в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "h2h.min_match_total",
+      "label": "Минимальный тотал матча в очных за {window}",
+      "group": "Очные встречи",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.count",
+      "label": "Сколько последних игр {side} найдено",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "",
+      "hint": "До 5 игр со страницы статистики"
+    },
+    {
+      "id": "p.recent.wins",
+      "label": "Побед {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.losses",
+      "label": "Поражений {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.win_rate",
+      "label": "Процент побед {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.streak",
+      "label": "Серия {side} (+ победы, − поражения)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10
+      },
+      "unit": "игр",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.last_result",
+      "label": "Результат последней игры {side}",
+      "group": "Форма игрока",
+      "type": "enum",
+      "args": {
+        "side": "p1"
+      },
+      "unit": "",
+      "hint": "",
+      "options": [
+        [
+          "win",
+          "Победа"
+        ],
+        [
+          "draw",
+          "Ничья"
+        ],
+        [
+          "loss",
+          "Поражение"
+        ]
+      ]
+    },
+    {
+      "id": "p.recent.avg_match_total",
+      "label": "Средний тотал матча {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_set_total",
+      "label": "Средний тотал четверти {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_set_points",
+      "label": "Средние очки {side} за четверть ({window} игр)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_conceded",
+      "label": "Средне пропущено {side} за четверть ({window} игр)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.over_rate",
+      "label": "Доля ТБ{threshold} в четвертьх {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "threshold": 18.5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.match_over_rate",
+      "label": "Доля матчей {side} с тоталом выше {threshold} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "threshold": 75.5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_sets",
+      "label": "Среднее число четвертей {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "партий",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.first_set_win_rate",
+      "label": "Процент побед {side} в 1-й четверти за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.set_win_rate",
+      "label": "Процент побед {side} в {set} четверти за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "set": 1
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.set_avg_total",
+      "label": "Средний тотал {set} четверти {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "set": 1
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.set_avg_points",
+      "label": "Средние очки {side} в {set} четверти за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "set": 1
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.set_over_rate",
+      "label": "Доля ТБ{threshold} в {set} четверти {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5,
+        "set": 1,
+        "threshold": 18.5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_margin",
+      "label": "Средний разрыв {side} за четверть ({window} игр)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.avg_match_margin",
+      "label": "Средний разрыв {side} в счёте матча ({window} игр)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.days_since_last",
+      "label": "Дней с последней игры {side}",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1"
+      },
+      "unit": "дн.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.matches_last_7d",
+      "label": "Игр {side} за последние 7 дней",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 10
+      },
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.trend_total",
+      "label": "Тренд тотала {side}: свежие минус старые ({window} игр)",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.max_match_total",
+      "label": "Максимальный тотал матча {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.min_match_total",
+      "label": "Минимальный тотал матча {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "p.recent.five_set_rate",
+      "label": "Доля матчей из 5 четвертей {side} за {window} игр",
+      "group": "Форма игрока",
+      "type": "number",
+      "args": {
+        "side": "p1",
+        "window": 5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "cmp.win_rate_diff",
+      "label": "Разница процента побед (игрок 1 − игрок 2) за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_total_diff",
+      "label": "Разница средних тоталов (игрок 1 − игрок 2) за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_total_sum",
+      "label": "Сумма средних тоталов матчей обоих за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_total_min",
+      "label": "Меньший средний тотал матча из двух за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_total_max",
+      "label": "Больший средний тотал матча из двух за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_set_total_mean",
+      "label": "Средний тотал четверти по форме обоих за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_set_total_min",
+      "label": "Меньший средний тотал четверти из двух за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.avg_set_total_max",
+      "label": "Больший средний тотал четверти из двух за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "cmp.win_rate_lead",
+      "label": "Кто лучше по проценту побед за {window} игр",
+      "group": "Сравнение игроков",
+      "type": "enum",
+      "args": {
+        "window": 5
+      },
+      "unit": "",
+      "hint": "",
+      "options": [
+        [
+          "p1",
+          "Игрок 1"
+        ],
+        [
+          "p2",
+          "Игрок 2"
+        ],
+        [
+          "tie",
+          "Равно"
+        ]
+      ]
+    },
+    {
+      "id": "cmp.streak_diff",
+      "label": "Разница серий (игрок 1 − игрок 2)",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 5
+      },
+      "unit": "игр",
+      "hint": ""
+    },
+    {
+      "id": "cmp.h2h_wins_diff",
+      "label": "Разница побед в очных (игрок 1 − игрок 2) за {window}",
+      "group": "Сравнение игроков",
+      "type": "number",
+      "args": {
+        "window": 10
+      },
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.p1",
+      "label": "Коэффициент на игрока 1",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.p2",
+      "label": "Коэффициент на игрока 2",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.ratio",
+      "label": "Отношение коэффициентов P1/P2",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.implied_p1",
+      "label": "Подразумеваемая вероятность игрока 1",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "odds.implied_p2",
+      "label": "Подразумеваемая вероятность игрока 2",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "odds.total_line",
+      "label": "Линия тотала в линии букмекера",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "odds.total_over",
+      "label": "Коэффициент на ТБ линии",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.total_under",
+      "label": "Коэффициент на ТМ линии",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.handicap",
+      "label": "Фора в линии букмекера",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "odds.handicap_p1",
+      "label": "Коэффициент на фору игрока 1",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.handicap_p2",
+      "label": "Коэффициент на фору игрока 2",
+      "group": "Коэффициенты",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "odds.favorite",
+      "label": "Фаворит букмекера",
+      "group": "Коэффициенты",
+      "type": "enum",
+      "args": {},
+      "unit": "",
+      "hint": "",
+      "options": [
+        [
+          "p1",
+          "Игрок 1"
+        ],
+        [
+          "draw",
+          "Ничья"
+        ],
+        [
+          "p2",
+          "Игрок 2"
+        ],
+        [
+          "tie",
+          "Равно"
+        ]
+      ]
+    },
+    {
+      "id": "odds.available",
+      "label": "Коэффициенты доступны",
+      "group": "Коэффициенты",
+      "type": "bool",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "match.hour",
+      "label": "Час начала матча",
+      "group": "Матч",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "match.weekday",
+      "label": "День недели матча",
+      "group": "Матч",
+      "type": "enum",
+      "args": {},
+      "unit": "",
+      "hint": "",
+      "options": [
+        [
+          0,
+          "Понедельник"
+        ],
+        [
+          1,
+          "Вторник"
+        ],
+        [
+          2,
+          "Среда"
+        ],
+        [
+          3,
+          "Четверг"
+        ],
+        [
+          4,
+          "Пятница"
+        ],
+        [
+          5,
+          "Суббота"
+        ],
+        [
+          6,
+          "Воскресенье"
+        ]
+      ]
+    },
+    {
+      "id": "match.minutes_to_start",
+      "label": "Минут до начала матча",
+      "group": "Матч",
+      "type": "number",
+      "args": {},
+      "unit": "мин",
+      "hint": ""
+    },
+    {
+      "id": "match.started",
+      "label": "Матч уже начался",
+      "group": "Матч",
+      "type": "bool",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "match.current_sets",
+      "label": "Сыграно четвертей в матче",
+      "group": "Матч",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "match.current_set",
+      "label": "Текущая/следующая четверть",
+      "group": "Матч",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "match.current_total",
+      "label": "Суммарный счёт матча сейчас",
+      "group": "Матч",
+      "type": "number",
+      "args": {},
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "match.league",
+      "label": "Название лиги",
+      "group": "Матч",
+      "type": "string",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "page.total_line",
+      "label": "Линия тотала со страницы",
+      "group": "Тоталы со страницы",
+      "type": "number",
+      "args": {},
+      "unit": "очк.",
+      "hint": ""
+    },
+    {
+      "id": "page.over_last5",
+      "label": "ТБ линии в последних 5 играх (БОЛ)",
+      "group": "Тоталы со страницы",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "page.under_last5",
+      "label": "ТМ линии в последних 5 играх (МЕН)",
+      "group": "Тоталы со страницы",
+      "type": "number",
+      "args": {},
+      "unit": "",
+      "hint": ""
+    },
+    {
+      "id": "page.over_share_last5",
+      "label": "Доля ТБ линии в последних 5 играх",
+      "group": "Тоталы со страницы",
+      "type": "number",
+      "args": {},
+      "unit": "%",
+      "hint": ""
+    },
+    {
+      "id": "page.season_over_rate",
+      "label": "Доля ТБ линии в текущем чемпионате",
+      "group": "Тоталы со страницы",
+      "type": "number",
+      "args": {},
+      "unit": "%",
+      "hint": ""
+    }
+  ]
+}

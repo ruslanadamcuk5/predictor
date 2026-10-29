@@ -1,0 +1,1179 @@
+{
+  "sports": {
+    "table_tennis": {
+      "name": "Настольный теннис",
+      "layout": "tt",
+      "heads": [
+        "p1",
+        "p2",
+        "over"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.set_win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_avg_total",
+          "args": {
+            "side": "p1",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_avg_total",
+          "args": {
+            "side": "p2",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_avg_points",
+          "args": {
+            "side": "p1",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_avg_points",
+          "args": {
+            "side": "p2",
+            "window": 5,
+            "set": 1
+          }
+        },
+        {
+          "metric": "p.recent.set_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5,
+            "set": 1,
+            "threshold": 18.5
+          }
+        },
+        {
+          "metric": "p.recent.set_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5,
+            "set": 1,
+            "threshold": 18.5
+          }
+        },
+        {
+          "metric": "p.recent.first_set_win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.first_set_win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.set_win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10,
+            "set": 1
+          }
+        },
+        {
+          "metric": "h2h.avg_set_total",
+          "args": {
+            "window": 10,
+            "set": 1
+          }
+        },
+        {
+          "metric": "h2h.avg_set_points",
+          "args": {
+            "side": "p1",
+            "window": 10,
+            "set": 1
+          }
+        },
+        {
+          "metric": "h2h.avg_sets",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        }
+      ],
+      "feature_size": 27
+    },
+    "football": {
+      "name": "Футбол",
+      "layout": "team",
+      "heads": [
+        "p1",
+        "p2",
+        "draw",
+        "over",
+        "handicap",
+        "btts"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.draw_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_total",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_margin",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_draw",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p2",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "h2h.btts_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        }
+      ],
+      "feature_size": 33
+    },
+    "hockey": {
+      "name": "Хоккей",
+      "layout": "team",
+      "heads": [
+        "p1",
+        "p2",
+        "draw",
+        "over",
+        "handicap",
+        "btts"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.draw_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_total",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_margin",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_draw",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p2",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "h2h.btts_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        }
+      ],
+      "feature_size": 33
+    },
+    "basketball": {
+      "name": "Баскетбол",
+      "layout": "team",
+      "heads": [
+        "p1",
+        "p2",
+        "draw",
+        "over",
+        "handicap",
+        "btts"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.draw_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_total",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_margin",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_draw",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p2",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "h2h.btts_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        }
+      ],
+      "feature_size": 33
+    },
+    "volleyball": {
+      "name": "Волейбол",
+      "layout": "team",
+      "heads": [
+        "p1",
+        "p2",
+        "draw",
+        "over",
+        "handicap",
+        "btts"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.draw_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_total",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_margin",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_draw",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p2",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "h2h.btts_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        }
+      ],
+      "feature_size": 33
+    },
+    "tennis": {
+      "name": "Большой теннис",
+      "layout": "team",
+      "heads": [
+        "p1",
+        "p2",
+        "draw",
+        "over",
+        "handicap",
+        "btts"
+      ],
+      "features": [
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.win_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.draw_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_match_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.trend_total",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.avg_margin",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p1"
+          }
+        },
+        {
+          "metric": "p.recent.days_since_last",
+          "args": {
+            "side": "p2"
+          }
+        },
+        {
+          "metric": "h2h.count",
+          "args": {}
+        },
+        {
+          "metric": "h2h.win_rate",
+          "args": {
+            "side": "p1",
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.draw_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_total",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.avg_match_margin",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "h2h.days_since_last",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_p2",
+          "args": {}
+        },
+        {
+          "metric": "odds.implied_draw",
+          "args": {}
+        },
+        {
+          "metric": "odds.total_line",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p1",
+          "args": {}
+        },
+        {
+          "metric": "odds.handicap_p2",
+          "args": {}
+        },
+        {
+          "metric": "page.total_line",
+          "args": {}
+        },
+        {
+          "metric": "page.over_share_last5",
+          "args": {}
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.btts_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        },
+        {
+          "metric": "h2h.btts_rate",
+          "args": {
+            "window": 10
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p1",
+            "window": 5
+          }
+        },
+        {
+          "metric": "p.recent.match_over_rate",
+          "args": {
+            "side": "p2",
+            "window": 5
+          }
+        }
+      ],
+      "feature_size": 33
+    }
+  }
+}

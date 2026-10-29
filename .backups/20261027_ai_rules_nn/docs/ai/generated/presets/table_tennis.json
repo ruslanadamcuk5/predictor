@@ -1,0 +1,1849 @@
+{
+  "sport": "table_tennis",
+  "name": "Настольный теннис",
+  "count": 46,
+  "presets": [
+    {
+      "name": "ТБ 18.5: средний тотал обоих ≥ 19",
+      "category": "Тоталы",
+      "description": "Средний тотал партии по последним 5 играм обоих игроков не ниже 19 — классический ориентир линии ТБ 18.5. Берём 1-ю партию.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТБ 18.5: средний тотал обоих ≥ 19",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.avg_set_total_mean",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 19
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: оба верховые",
+      "category": "Тоталы",
+      "description": "У каждого игрока ТБ 18.5 в партиях за последние 5 игр проходит минимум в 60% случаев — агрессивная манера даёт высокие тоталы.",
+      "source": "PingPongBets · Over/Under в настольном теннисе",
+      "rule": {
+        "name": "ТБ 18.5: оба верховые",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 60
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: очные верховые",
+      "category": "Тоталы",
+      "description": "В 7 из 10 очных встреч 1-я партия была ТБ 18.5 и очных не меньше пяти — соперники исторически играют верховые партии.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "ТБ 18.5: очные верховые",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.over_rate",
+              "args": {
+                "window": 10,
+                "set": 1,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 70
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.64
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: средний тотал очных ≥ 19",
+      "category": "Тоталы",
+      "description": "Средний тотал партии в очных встречах не ниже 19 при минимум четырёх встречах — история противостояния верхушечная.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТБ 18.5: средний тотал очных ≥ 19",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.avg_set_total",
+              "args": {
+                "window": 10,
+                "set": 1
+              },
+              "op": "gte",
+              "value": 19
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 4
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: линия 75.5 и ТБ в 4 из 5",
+      "category": "Тоталы",
+      "description": "Линия матча 75.5 и больше и в последних 5 играх ТБ линии проходил минимум 4 раза. Ориентир Betcity по тоталам страницы.",
+      "source": "Betcity · тоталы со страницы статистики",
+      "rule": {
+        "name": "ТБ 18.5: линия 75.5 и ТБ в 4 из 5",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "page.over_last5",
+              "args": {},
+              "op": "gte",
+              "value": 4
+            },
+            {
+              "metric": "page.total_line",
+              "args": {},
+              "op": "gte",
+              "value": 75.5
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: очные за 5 партий",
+      "category": "Тоталы",
+      "description": "Больше половины очных матчей доходили до 5 партий, а средний тотал партии не ниже 18 — длинные матчи дают больше очков.",
+      "source": "DeuceLab · рынки настольного тенниса",
+      "rule": {
+        "name": "ТБ 18.5: очные за 5 партий",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.five_set_rate",
+              "args": {
+                "window": 10
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "h2h.avg_set_total",
+              "args": {
+                "window": 10,
+                "set": 1
+              },
+              "op": "gte",
+              "value": 18
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "ТБ 19.5: сумма тоталов матчей ≥ 78",
+      "category": "Тоталы",
+      "description": "Сумма средних тоталов матчей обоих игроков за 5 игр не ниже 78: матч обещает быть результативным, берём повышенный тотал партии.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТБ 19.5: сумма тоталов матчей ≥ 78",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.avg_total_sum",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 78
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "over",
+          "threshold": 19.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: тренд тотала растёт",
+      "category": "Тоталы",
+      "description": "У обоих игроков свежие игры результативнее старых (тренд +2 очка), а средний тотал партии уже не ниже 18.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "ТБ 18.5: тренд тотала растёт",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.trend_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 2
+            },
+            {
+              "metric": "p.recent.trend_total",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 2
+            },
+            {
+              "metric": "p.recent.avg_set_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 18
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5: оба низовые",
+      "category": "Тоталы",
+      "description": "У обоих ТБ 18.5 в партиях проходит не чаще 30% игр — защитная манера и осторожный старт дают низкие тоталы.",
+      "source": "PingPongBets · Over/Under в настольном теннисе",
+      "rule": {
+        "name": "ТМ 18.5: оба низовые",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 30
+            },
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 30
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5: очные низкие",
+      "category": "Тоталы",
+      "description": "Средний тотал партии в очных не выше 17, а ТБ 18.5 проходил не более чем в 30% партий при минимум 4 встречах.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "ТМ 18.5: очные низкие",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.avg_set_total",
+              "args": {
+                "window": 10,
+                "set": 1
+              },
+              "op": "lte",
+              "value": 17
+            },
+            {
+              "metric": "h2h.over_rate",
+              "args": {
+                "window": 10,
+                "set": 1,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 30
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 4
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5: средний тотал обоих ≤ 17",
+      "category": "Тоталы",
+      "description": "Даже больший из двух средних тоталов партии не выше 17 — оба игрока стабильно играют низовые партии.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТМ 18.5: средний тотал обоих ≤ 17",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.avg_set_total_max",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": 17
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5 в 1-й: оба сильно стартуют",
+      "category": "Тоталы",
+      "description": "Средний тотал именно 1-й партии у обоих не ниже 19 за последние 5 игр — оба входят в матч агрессивно.",
+      "source": "PingPongBets · Over/Under в настольном теннисе",
+      "rule": {
+        "name": "ТБ 18.5 в 1-й: оба сильно стартуют",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.set_avg_total",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "set": 1
+              },
+              "op": "gte",
+              "value": 19
+            },
+            {
+              "metric": "p.recent.set_avg_total",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "set": 1
+              },
+              "op": "gte",
+              "value": 19
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5 в 1-й: оба осторожны",
+      "category": "Тоталы",
+      "description": "Средний тотал 1-й партии у обоих не выше 16 за последние 5 игр — оба долго входят в матч.",
+      "source": "PingPongBets · Over/Under в настольном теннисе",
+      "rule": {
+        "name": "ТМ 18.5 в 1-й: оба осторожны",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.set_avg_total",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "set": 1
+              },
+              "op": "lte",
+              "value": 16
+            },
+            {
+              "metric": "p.recent.set_avg_total",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "set": 1
+              },
+              "op": "lte",
+              "value": 16
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: верховой фаворит",
+      "category": "Тоталы",
+      "description": "Букмекерский фаворит — игрок 1, и его средний тотал партии за 5 игр не ниже 20: сильный игрок много забивает даже в коротких партиях.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТБ 18.5: верховой фаворит",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.favorite",
+              "args": {},
+              "op": "eq",
+              "value": "p1"
+            },
+            {
+              "metric": "p.recent.avg_set_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 20
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5: низовой фаворит",
+      "category": "Тоталы",
+      "description": "Фаворит — игрок 1, но сам играет низовые партии (средний тотал ≤ 17), а у соперника ТБ 18.5 редок.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "ТМ 18.5: низовой фаворит",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.favorite",
+              "args": {},
+              "op": "eq",
+              "value": "p1"
+            },
+            {
+              "metric": "p.recent.avg_set_total",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 17
+            },
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 35
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "П1: форма + серия",
+      "category": "Победитель",
+      "description": "Игрок 1 берёт минимум 60% последних 5 игр и идёт на серии из 2+ побед — форма и уверенность на его стороне.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: форма + серия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.streak",
+              "args": {
+                "side": "p1"
+              },
+              "op": "gte",
+              "value": 2
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: форма + серия",
+      "category": "Победитель",
+      "description": "Зеркальный шаблон: игрок 2 берёт минимум 60% последних 5 игр и идёт на серии из 2+ побед.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: форма + серия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "p.recent.streak",
+              "args": {
+                "side": "p2"
+              },
+              "op": "gte",
+              "value": 2
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: очное доминирование",
+      "category": "Победитель",
+      "description": "Игрок 1 выиграл минимум 60% очных встреч при их количестве не меньше пяти — стилистически удобный соперник.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "П1: очное доминирование",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П2: очное доминирование",
+      "category": "Победитель",
+      "description": "Игрок 2 выиграл минимум 60% очных встреч при их количестве не меньше пяти.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "П2: очное доминирование",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П1: последняя очная + форма",
+      "category": "Победитель",
+      "description": "Последнюю очную встречу выиграл игрок 1, и он же берёт минимум половину последних игр — свежий психологический перевес.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: последняя очная + форма",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.last_winner",
+              "args": {},
+              "op": "eq",
+              "value": "p1"
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 50
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "П2: последняя очная + форма",
+      "category": "Победитель",
+      "description": "Последнюю очную встречу выиграл игрок 2, и он же берёт минимум половину последних игр.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: последняя очная + форма",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.last_winner",
+              "args": {},
+              "op": "eq",
+              "value": "p2"
+            },
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 50
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "П1: фаворит 1.30–1.80",
+      "category": "Победитель",
+      "description": "Игрок 1 — фаворит букмекера, но кэф не ниже 1.30 и не выше 1.80: достаточно уверенно, но без «мертвой» цены. Две первые партии.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: фаворит 1.30–1.80",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.favorite",
+              "args": {},
+              "op": "eq",
+              "value": "p1"
+            },
+            {
+              "metric": "odds.p1",
+              "args": {},
+              "op": "gte",
+              "value": 1.3
+            },
+            {
+              "metric": "odds.p1",
+              "args": {},
+              "op": "lte",
+              "value": 1.8
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: фаворит 1.30–1.80",
+      "category": "Победитель",
+      "description": "Игрок 2 — фаворит букмекера с кэфом в коридоре 1.30–1.80. Две первые партии.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: фаворит 1.30–1.80",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.favorite",
+              "args": {},
+              "op": "eq",
+              "value": "p2"
+            },
+            {
+              "metric": "odds.p2",
+              "args": {},
+              "op": "gte",
+              "value": 1.3
+            },
+            {
+              "metric": "odds.p2",
+              "args": {},
+              "op": "lte",
+              "value": 1.8
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: разница побед ≥ 30 п.п.",
+      "category": "Победитель",
+      "description": "За последние 5 игр игрок 1 выигрывает на 30 процентных пунктов чаще игрока 2 — заметный разрыв в форме.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: разница побед ≥ 30 п.п.",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 30
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: разница побед ≥ 30 п.п.",
+      "category": "Победитель",
+      "description": "За последние 5 игр игрок 2 выигрывает на 30 процентных пунктов чаще игрока 1.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: разница побед ≥ 30 п.п.",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": -30
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: серия в очных ≥ 3",
+      "category": "Победитель",
+      "description": "Игрок 1 выиграл три очные встречи подряд и очных набралось минимум пять — устойчивое преимущество в паре.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "П1: серия в очных ≥ 3",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.streak",
+              "args": {
+                "side": "p1"
+              },
+              "op": "gte",
+              "value": 3
+            },
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "gte",
+              "value": 5
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П1: сильнее в 1-й партии",
+      "category": "Победитель",
+      "description": "Игрок 1 берёт 70%+ первых партий за 5 игр, а игрок 2 — не более 40%: быстрый старт решает первую партию.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "П1: сильнее в 1-й партии",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 70
+            },
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П2: сильнее в 1-й партии",
+      "category": "Победитель",
+      "description": "Игрок 2 берёт 70%+ первых партий за 5 игр, а игрок 1 — не более 40%.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "П2: сильнее в 1-й партии",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 70
+            },
+            {
+              "metric": "p.recent.first_set_win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П1: явный фаворит на две партии",
+      "category": "Победитель",
+      "description": "Кэф на игрока 1 не выше 1.50 и разрыв в проценте побед не меньше 40 п.п. — берём П1 в первых двух партиях.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "П1: явный фаворит на две партии",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.p1",
+              "args": {},
+              "op": "lte",
+              "value": 1.5
+            },
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "П2: явный фаворит на две партии",
+      "category": "Победитель",
+      "description": "Кэф на игрока 2 не выше 1.50 и разрыв в проценте побед не меньше 40 п.п. — берём П2 в первых двух партиях.",
+      "source": "Beting Rating · Total in Table Tennis",
+      "rule": {
+        "name": "П2: явный фаворит на две партии",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.p2",
+              "args": {},
+              "op": "lte",
+              "value": 1.5
+            },
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": -40
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "name": "Пропуск: мало очных",
+      "category": "Фильтры",
+      "description": "Меньше трёх очных встреч — статистике противостояния нельзя доверять, правило-фильтр пропускает такой матч.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "Пропуск: мало очных",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.count",
+              "args": {},
+              "op": "lt",
+              "value": 3
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: нет коэффициентов",
+      "category": "Фильтры",
+      "description": "Коэффициенты недоступны — нельзя проверить ценность ставки.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: нет коэффициентов",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "odds.available",
+              "args": {},
+              "op": "is",
+              "value": false
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: кэф ниже 1.35",
+      "category": "Фильтры",
+      "description": "Кэф на любого игрока ниже 1.35: цена не оправдывает риск даже при верном исходе.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: кэф ниже 1.35",
+        "conditions": {
+          "logic": "or",
+          "conditions": [
+            {
+              "metric": "odds.p1",
+              "args": {},
+              "op": "lt",
+              "value": 1.35
+            },
+            {
+              "metric": "odds.p2",
+              "args": {},
+              "op": "lt",
+              "value": 1.35
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: разрыв кэфов ≥ 4",
+      "category": "Фильтры",
+      "description": "Отношение коэффициентов P1/P2 больше 4 или меньше 0.25 — слишком большая разница в классе, рынок уже всё учёл.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: разрыв кэфов ≥ 4",
+        "conditions": {
+          "logic": "or",
+          "conditions": [
+            {
+              "metric": "odds.ratio",
+              "args": {},
+              "op": "gte",
+              "value": 4
+            },
+            {
+              "metric": "odds.ratio",
+              "args": {},
+              "op": "lte",
+              "value": 0.25
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: мало последних игр",
+      "category": "Фильтры",
+      "description": "У любого из игроков меньше трёх разобранных последних игр — форма неизвестна, статистика ненадёжна.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: мало последних игр",
+        "conditions": {
+          "logic": "or",
+          "conditions": [
+            {
+              "metric": "p.recent.count",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "lt",
+              "value": 3
+            },
+            {
+              "metric": "p.recent.count",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "lt",
+              "value": 3
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: перегруз играми",
+      "category": "Фильтры",
+      "description": "У любого из игроков 15+ матчей за 7 дней — усталость и переезды снижают качество игры, тоталы и исходы плывут.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: перегруз играми",
+        "conditions": {
+          "logic": "or",
+          "conditions": [
+            {
+              "metric": "p.recent.matches_last_7d",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 15
+            },
+            {
+              "metric": "p.recent.matches_last_7d",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 15
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: простой ≥ 30 дней",
+      "category": "Фильтры",
+      "description": "Любой игрок не играл 30+ дней — форма после простоя непредсказуема.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: простой ≥ 30 дней",
+        "conditions": {
+          "logic": "or",
+          "conditions": [
+            {
+              "metric": "p.recent.days_since_last",
+              "args": {
+                "side": "p1"
+              },
+              "op": "gte",
+              "value": 30
+            },
+            {
+              "metric": "p.recent.days_since_last",
+              "args": {
+                "side": "p2"
+              },
+              "op": "gte",
+              "value": 30
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "Пропуск: матч уже начался",
+      "category": "Фильтры",
+      "description": "Страховка от запоздалого сигнала: если матч уже стартовал, ставка не отправляется.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "Пропуск: матч уже начался",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "match.started",
+              "args": {},
+              "op": "is",
+              "value": true
+            }
+          ]
+        },
+        "action": {
+          "type": "skip",
+          "targets": [
+            1
+          ],
+          "side": "auto",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: равные соперники + верховые",
+      "category": "Комбинированные",
+      "description": "Разница в проценте побед в пределах ±15 п.п., а средний тотал партии обоих не ниже 18.5 — ровные матчи чаще идут в затяжные партии.",
+      "source": "DeuceLab · рынки настольного тенниса",
+      "rule": {
+        "name": "ТБ 18.5: равные соперники + верховые",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": -15
+            },
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": 15
+            },
+            {
+              "metric": "cmp.avg_set_total_mean",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 18.5
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: форма + очные + кэф",
+      "category": "Комбинированные",
+      "description": "Три независимых подтверждения: 60%+ побед за 5 игр, 55%+ в очных и кэф не выше 1.90.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: форма + очные + кэф",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p1",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            },
+            {
+              "metric": "odds.p1",
+              "args": {},
+              "op": "lte",
+              "value": 1.9
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "П2: форма + очные + кэф",
+      "category": "Комбинированные",
+      "description": "Три независимых подтверждения: 60%+ побед за 5 игр, 55%+ в очных и кэф не выше 1.90.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: форма + очные + кэф",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 5
+              },
+              "op": "gte",
+              "value": 60
+            },
+            {
+              "metric": "h2h.win_rate",
+              "args": {
+                "side": "p2",
+                "window": 10
+              },
+              "op": "gte",
+              "value": 55
+            },
+            {
+              "metric": "odds.p2",
+              "args": {},
+              "op": "lte",
+              "value": 1.9
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: обе верховые + очные",
+      "category": "Комбинированные",
+      "description": "У обоих ТБ 18.5 проходит хотя бы в половине партий, и очные подтверждают верховой сценарий.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "ТБ 18.5: обе верховые + очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 50
+            },
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 50
+            },
+            {
+              "metric": "h2h.over_rate",
+              "args": {
+                "window": 10,
+                "set": 1,
+                "threshold": 18.5
+              },
+              "op": "gte",
+              "value": 50
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.62
+        }
+      }
+    },
+    {
+      "name": "ТМ 18.5: обе низовые + очные",
+      "category": "Комбинированные",
+      "description": "У обоих ТБ 18.5 проходит не чаще 35% партий, и средний тотал очных ниже 17.5 — низовой сценарий подтверждён дважды.",
+      "source": "Table Tennis Totals · гайд по тоталам",
+      "rule": {
+        "name": "ТМ 18.5: обе низовые + очные",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p1",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 35
+            },
+            {
+              "metric": "p.recent.over_rate",
+              "args": {
+                "side": "p2",
+                "window": 5,
+                "threshold": 18.5
+              },
+              "op": "lte",
+              "value": 35
+            },
+            {
+              "metric": "h2h.avg_set_total",
+              "args": {
+                "window": 10,
+                "set": 1
+              },
+              "op": "lte",
+              "value": 17.5
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "under",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П1: последняя игра + очная серия",
+      "category": "Комбинированные",
+      "description": "Игрок 1 выиграл последнюю игру и минимум две очные встречи подряд — свежая форма совпала с удобным соперником.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П1: последняя игра + очная серия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.last_result",
+              "args": {
+                "side": "p1"
+              },
+              "op": "eq",
+              "value": "win"
+            },
+            {
+              "metric": "h2h.streak",
+              "args": {
+                "side": "p1"
+              },
+              "op": "gte",
+              "value": 2
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p1",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "П2: последняя игра + очная серия",
+      "category": "Комбинированные",
+      "description": "Игрок 2 выиграл последнюю игру и минимум две очные встречи подряд.",
+      "source": "SmartBettingGuide · стратегия на настольный теннис",
+      "rule": {
+        "name": "П2: последняя игра + очная серия",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "p.recent.last_result",
+              "args": {
+                "side": "p2"
+              },
+              "op": "eq",
+              "value": "win"
+            },
+            {
+              "metric": "h2h.streak",
+              "args": {
+                "side": "p2"
+              },
+              "op": "gte",
+              "value": 2
+            }
+          ]
+        },
+        "action": {
+          "type": "winner",
+          "targets": [
+            1
+          ],
+          "side": "p2",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    },
+    {
+      "name": "ТБ 18.5: 5-сетовые очные + равная форма",
+      "category": "Комбинированные",
+      "description": "Половина очных доходила до 5 партий, форма игроков ровная (±20 п.п.), а средний тотал партии не ниже 18.5.",
+      "source": "DeuceLab · рынки настольного тенниса",
+      "rule": {
+        "name": "ТБ 18.5: 5-сетовые очные + равная форма",
+        "conditions": {
+          "logic": "and",
+          "conditions": [
+            {
+              "metric": "h2h.five_set_rate",
+              "args": {
+                "window": 10
+              },
+              "op": "gte",
+              "value": 50
+            },
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": -20
+            },
+            {
+              "metric": "cmp.win_rate_diff",
+              "args": {
+                "window": 5
+              },
+              "op": "lte",
+              "value": 20
+            },
+            {
+              "metric": "cmp.avg_set_total_mean",
+              "args": {
+                "window": 5
+              },
+              "op": "gte",
+              "value": 18.5
+            }
+          ]
+        },
+        "action": {
+          "type": "total",
+          "targets": [
+            1,
+            2
+          ],
+          "side": "over",
+          "threshold": 18.5,
+          "confidence": 0.6
+        }
+      }
+    }
+  ]
+}
