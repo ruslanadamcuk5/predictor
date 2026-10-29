@@ -423,7 +423,7 @@ class BotSettings:
         # расчёт, если включён fallback_local.
         "online": {
             "enabled": False,
-            "base_url": "",
+            "base_url": "https://virusadk.alwaysdata.net/predictor",
             "token": "",
             "timeout": 25,
             "fallback_local": True,

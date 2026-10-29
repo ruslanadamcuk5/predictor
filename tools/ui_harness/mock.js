@@ -28,7 +28,7 @@
       min_confidence: 0.5,
       sports: ["table_tennis", "football", "hockey", "basketball", "volleyball", "tennis"],
       markets: { table_tennis: ["winner", "total"], football: ["winner", "total"] } },
-    online: { enabled: false, base_url: "https://predictor.alwaysdata.net",
+    online: { enabled: false, base_url: "https://virusadk.alwaysdata.net/predictor",
       token: "", timeout: 25, fallback_local: true, verify_ssl: true,
       last_ok: "", last_error: "" },
     updates: { enabled: true, manifest_url: "", last_check: "",

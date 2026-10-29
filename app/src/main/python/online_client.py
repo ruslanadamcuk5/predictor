@@ -20,6 +20,9 @@ import requests
 
 DEFAULT_TIMEOUT = 25
 MAX_HISTORY = 8000
+# Адрес онлайн-сервиса, если пользователь не указал свой. Сайт живёт
+# в подкаталоге аккаунта alwaysdata (бесплатный тариф — один адрес).
+DEFAULT_BASE_URL = "https://virusadk.alwaysdata.net/predictor"
 
 # Поля истории, без которых анализатору нечего считать. Остальное
 # (текст сообщения, id Telegram, старые ИИ-прогнозы) не отправляем: так
@@ -41,7 +44,8 @@ def config(settings_snapshot, overrides=None):
                     "fallback_local", "verify_ssl"):
             if key in overrides and overrides[key] not in (None, ""):
                 cfg[key] = overrides[key]
-    cfg["base_url"] = str(cfg.get("base_url") or "").strip().rstrip("/")
+    cfg["base_url"] = (str(cfg.get("base_url") or "").strip().rstrip("/")
+                       or DEFAULT_BASE_URL)
     cfg["token"] = str(cfg.get("token") or "").strip()
     try:
         cfg["timeout"] = max(5, min(120, int(cfg.get("timeout") or

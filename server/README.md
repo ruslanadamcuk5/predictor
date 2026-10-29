@@ -60,38 +60,46 @@ releases/
 
 ## alwaysdata.com: пошагово
 
-1. Войдите в панель alwaysdata и создайте сайт:
-   **Web → Sites → Add a site**.
-2. Тип сайта — **WSGI**. Python — 3.10 или новее.
-3. Каталог сайта, например `/home/LOGIN/predictor`.
-4. Загрузите содержимое `dist/server/` в этот каталог. Удобнее всего по SSH:
-   ```bash
-   scp -r dist/server/* LOGIN@ssh-LOGIN.alwaysdata.net:/home/LOGIN/predictor/
-   ```
-   Либо загрузите архив через файловый менеджер панели.
-5. В настройках сайта укажите WSGI-файл:
-   `/home/LOGIN/predictor/app.wsgi`
-6. В **Environment variables** сайта добавьте:
-   ```
-   PREDICTOR_TOKEN=<длинная случайная строка>
-   PREDICTOR_RELEASES_DIR=/home/LOGIN/predictor/releases
-   ```
-   Вторую переменную можно не задавать, если `releases/` лежит рядом с
-   `online_app.py`.
-   Сгенерировать токен можно командой `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-7. Сохраните сайт и откройте выданный адрес, например
-   `https://LOGIN.alwaysdata.net`. Должна открыться страница состояния.
-8. Проверьте API:
-   ```bash
-   curl https://LOGIN.alwaysdata.net/api/v1/ping -H "Authorization: Bearer TOKEN"
-   ```
-   Ответ содержит `"ok": true` и версию сервера.
+Бесплатный тариф alwaysdata разрешает сайты только на адресе аккаунта
+(`<логин>.alwaysdata.net`), поэтому сервис удобно повесить на подкаталог
+рядом с другим сайтом:
 
-9. Проверьте обновление:
-   ```bash
-   curl https://LOGIN.alwaysdata.net/api/v1/update
-   ```
-   Должны прийти `version_code`, `version_name`, `url`, `size`, `sha256`.
+```
+https://<логин>.alwaysdata.net/predictor
+```
+
+Каталог `predictor` уже содержит всё необходимое. В панели:
+
+1. **Web → Sites → Add a site**.
+2. Тип сайта — **Python WSGI**.
+3. **Addresses**: `<логин>.alwaysdata.net/predictor` (именно с путём).
+4. **Path**: `predictor`.
+5. **Working directory**: `/home/<логин>/predictor`.
+6. **Python version**: 3.13.
+7. **Virtualenv**: `/home/<логин>/.virtualenvs/predictor`.
+8. **WSGI file**: `/home/<логин>/predictor/app.wsgi`.
+9. Включите **path_trim** (обрезать путь) и **Force HTTPS**.
+10. Сохраните сайт и откройте
+    `https://<логин>.alwaysdata.net/predictor/` — должна появиться страница
+    состояния.
+
+Переменные окружения задавать не обязательно: `app.wsgi` читает файл
+`.env` рядом с собой. В нём уже лежат:
+
+```ini
+PREDICTOR_TOKEN=<длинная случайная строка>
+PREDICTOR_RELEASES_DIR=/home/<логин>/predictor/releases
+PREDICTOR_BASE_PATH=/predictor
+```
+
+`PREDICTOR_BASE_PATH` нужен, чтобы ссылки в манифесте обновления были
+публичными (`/predictor/releases/...`), даже когда WSGI видит уже обрезанный
+путь. Если сайт создан в корне отдельного домена, уберите эту переменную.
+
+Если позже появится отдельный домен или аккаунт с адресом без пути, создайте
+обычный сайт **Python WSGI** с Working directory `/home/<логин>/predictor`,
+WSGI file `/home/<логин>/predictor/app.wsgi` и пустым `PREDICTOR_BASE_PATH`.
+Код поддерживает оба варианта.
 
 Если alwaysdata показывает ошибку 500, откройте **Web → Sites → ваш сайт →
 Logs** и проверьте traceback. Чаще всего причина — неверный путь к `app.wsgi`

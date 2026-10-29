@@ -1356,7 +1356,7 @@ function bindAi() {
 
 /* ---------------- обновления APK ---------------- */
 
-const DEFAULT_UPDATE_URL = 'https://predictor.alwaysdata.net/api/v1/update';
+const DEFAULT_ONLINE_URL = 'https://virusadk.alwaysdata.net/predictor';
 const UPDATE_SKIP_KEY = 'predictor.update.skip';
 
 function updateCfg() {
@@ -1364,14 +1364,17 @@ function updateCfg() {
     (state.settings || {}).updates || {});
 }
 
+function onlineBaseUrl() {
+  const base = String(((state.settings || {}).online || {}).base_url || '')
+    .trim().replace(/\/+$/, '');
+  return base || DEFAULT_ONLINE_URL;
+}
+
 function updateManifestUrl() {
   const cfg = updateCfg();
   const explicit = String(cfg.manifest_url || '').trim();
   if (explicit) return explicit;
-  const base = String(((state.settings || {}).online || {}).base_url || '')
-    .trim().replace(/\/+$/, '');
-  if (base) return base + '/api/v1/update';
-  return DEFAULT_UPDATE_URL;
+  return onlineBaseUrl() + '/api/v1/update';
 }
 
 function updateToken() {
@@ -2438,7 +2441,7 @@ function renderSettings(s) {
 
   const online = s.online || {};
   if ($('setOnlineEnabled')) $('setOnlineEnabled').checked = !!online.enabled;
-  if ($('setOnlineUrl')) $('setOnlineUrl').value = online.base_url || '';
+  if ($('setOnlineUrl')) $('setOnlineUrl').value = online.base_url || DEFAULT_ONLINE_URL;
   if ($('setOnlineToken')) $('setOnlineToken').value = online.token || '';
   if ($('setOnlineTimeout')) {
     $('setOnlineTimeout').value = String(num(online.timeout) || 25);
@@ -4640,7 +4643,8 @@ function onlineConfig() {
 
 function renderOnlineStatus() {
   const cfg = onlineConfig();
-  const enabled = !!cfg.enabled && !!String(cfg.base_url || '').trim();
+  const baseUrl = onlineBaseUrl();
+  const enabled = !!cfg.enabled;
   const badge = $('anOnlineBadge');
   if (badge) {
     badge.textContent = enabled ? 'онлайн' : 'офлайн';
@@ -4654,7 +4658,7 @@ function renderOnlineStatus() {
   const hint = $('anOnlineHint');
   if (hint) {
     hint.textContent = enabled
-      ? 'Анализ и рекомендации считает сайт ' + String(cfg.base_url || '') +
+      ? 'Анализ и рекомендации считает сайт ' + baseUrl +
         '. При ошибке приложение вернётся к локальному расчёту.'
       : 'Анализ считается на телефоне. Включите онлайн, чтобы считать тот же ' +
         'анализ на сайте и получать общие рекомендации по правилам.';
@@ -4677,16 +4681,13 @@ function renderOnlineStatus() {
 function toggleOnline() {
   const cfg = onlineConfig();
   const enabled = !cfg.enabled;
-  if (enabled && !String(cfg.base_url || '').trim()) {
-    toast('Сначала укажите адрес сайта в настройках', 'error');
-    navigate('settings');
-    return;
-  }
+  const baseUrl = onlineBaseUrl();
   loader(true);
   try {
     const res = call('online', JSON.stringify({
       action: 'configure',
       enabled: enabled,
+      base_url: String(cfg.base_url || '').trim() || baseUrl,
     }));
     if (!res || !res.ok) {
       toast((res && res.error) || 'Не удалось переключить режим', 'error');

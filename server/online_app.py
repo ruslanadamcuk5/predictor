@@ -38,6 +38,10 @@ import analysis_service  # noqa: E402
 TOKEN = str(os.environ.get("PREDICTOR_TOKEN") or "").strip()
 AUTH_REQUIRED = bool(TOKEN)
 
+# Публичный префикс, если сайт alwaysdata настроен с обрезкой пути
+# (path_trim). Тогда WSGI видит /api/..., а снаружи адрес /predictor/api/...
+BASE_PATH = str(os.environ.get("PREDICTOR_BASE_PATH") or "").rstrip("/")
+
 # Каталог с опубликованными релизами. Можно переопределить переменной окружения
 # PREDICTOR_RELEASES_DIR, например /home/<login>/predictor/releases.
 RELEASES_DIR = os.path.abspath(
@@ -196,10 +200,15 @@ def analyze(data):
     return payload
 
 
+def _script_prefix(environ):
+    """Префикс монтирования, если сервис живёт не в корне сайта."""
+    return str(environ.get("SCRIPT_NAME") or BASE_PATH or "").rstrip("/")
+
+
 def _base_url(environ):
     scheme = str(environ.get("wsgi.url_scheme") or "https")
-    host = str(environ.get("HTTP_HOST") or "predictor.alwaysdata.net")
-    return "%s://%s" % (scheme, host)
+    host = str(environ.get("HTTP_HOST") or "virusadk.alwaysdata.net")
+    return "%s://%s%s" % (scheme, host, _script_prefix(environ))
 
 
 def _sha256_file(path):
@@ -308,6 +317,9 @@ def update_manifest(environ):
         }
     if not url:
         url = RELEASES_PREFIX + apk_name
+    prefix = _script_prefix(environ)
+    if prefix and url.startswith("/") and not url.startswith(prefix + "/"):
+        url = prefix + url
     size = os.path.getsize(apk)
     published_at = _str_of(data, "published_at", "date")
     if not published_at:
@@ -454,10 +466,10 @@ def _dashboard(environ):
   <h2>API</h2>
   <div class="card">
     <ul>
-      <li><code>GET /api/v1/ping</code> — проверка связи.</li>
-      <li><code>POST /api/v1/analyze</code> — расчёт анализа и рекомендаций.</li>
-      <li><code>GET /api/v1/update</code> — манифест обновления APK.</li>
-      <li><code>GET /releases/&lt;файл&gt;.apk</code> — файл обновления.</li>
+      <li><code>GET {prefix}/api/v1/ping</code> — проверка связи.</li>
+      <li><code>POST {prefix}/api/v1/analyze</code> — расчёт анализа и рекомендаций.</li>
+      <li><code>GET {prefix}/api/v1/update</code> — манифест обновления APK.</li>
+      <li><code>GET {prefix}/releases/&lt;файл&gt;.apk</code> — файл обновления.</li>
     </ul>
     <div class="muted">Если задан <code>PREDICTOR_TOKEN</code>, передайте
       заголовок <code>Authorization: Bearer …</code>.</div>
@@ -465,7 +477,8 @@ def _dashboard(environ):
 </main></body></html>"""
     return (html.replace("{version}", SERVER_VERSION)
             .replace("{time}", _now()).replace("{auth}", auth)
-            .replace("{base}", base))
+            .replace("{base}", base)
+            .replace("{prefix}", _script_prefix(environ)))
 
 
 class Application(object):
@@ -474,6 +487,10 @@ class Application(object):
     def __call__(self, environ, start_response):
         method = str(environ.get("REQUEST_METHOD") or "GET").upper()
         path = str(environ.get("PATH_INFO") or "/")
+        if (BASE_PATH and not environ.get("SCRIPT_NAME")
+                and (path == BASE_PATH or path.startswith(BASE_PATH + "/"))):
+            # Сайт без path_trim: срезаем публичный префикс сами.
+            path = path[len(BASE_PATH):] or "/"
         if path != "/" and path.endswith("/"):
             path = path.rstrip("/")
         try:

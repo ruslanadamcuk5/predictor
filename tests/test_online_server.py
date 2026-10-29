@@ -405,4 +405,65 @@ check("паритет: полный отчёт совпадает", local_clean 
       sorted(key for key in set(local_clean) | set(server_clean)
              if local_clean.get(key) != server_clean.get(key)))
 
+# =====================================================================
+# Монтирование в подкаталог: /predictor/... (общий сайт alwaysdata)
+# =====================================================================
+def prefixed_request(method, path):
+    environ = {
+        "REQUEST_METHOD": method,
+        "PATH_INFO": path,
+        "SCRIPT_NAME": "/predictor",
+        "QUERY_STRING": "",
+        "SERVER_NAME": "test",
+        "SERVER_PORT": "80",
+        "HTTP_HOST": "virusadk.alwaysdata.net",
+        "HTTP_AUTHORIZATION": "Bearer test-token",
+        "wsgi.url_scheme": "https",
+        "wsgi.input": io.BytesIO(b""),
+        "CONTENT_LENGTH": "0",
+    }
+    captured = {}
+
+    def start_response(status, response_headers):
+        captured["status"] = int(status.split()[0])
+        captured["headers"] = dict(response_headers)
+
+    body = b"".join(online_app.application(environ, start_response))
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except Exception:
+        data = {"raw": body.decode("utf-8", "replace")}
+    return captured, data
+
+
+status, data = prefixed_request("GET", "/api/v1/update")
+check("подкаталог: update 200", status["status"] == 200, status)
+check("подкаталог: ссылка APK с префиксом",
+      data.get("url") == "/predictor/releases/" + APK_NAME, data.get("url"))
+
+status, data = prefixed_request("GET", "/api/v1/ping")
+check("подкаталог: ping работает", data.get("ok") is True, data)
+
+status, body = prefixed_request("GET", "/")
+check("подкаталог: страница состояния", status["status"] == 200
+      and "/predictor/api/v1/ping" in body.get("raw", ""), status)
+
+# path_trim: снаружи /predictor, внутри WSGI путь уже обрезан
+saved_base = online_app.BASE_PATH
+try:
+    online_app.BASE_PATH = "/predictor"
+    status, data = request("GET", "/api/v1/update")
+    check("path_trim: ссылка APK с публичным префиксом",
+          data.get("url") == "/predictor/releases/" + APK_NAME,
+          data.get("url"))
+    status, data = request("GET", "/predictor/api/v1/ping",
+                           token="test-token")
+    check("без path_trim: префикс срезается приложением",
+          status["status"] == 200 and data.get("ok") is True, data)
+    status, body = raw_request("GET", "/predictor/releases/" + APK_NAME)
+    check("без path_trim: APK доступен по префиксу",
+          status["status"] == 200 and len(body) == APK_SIZE, status)
+finally:
+    online_app.BASE_PATH = saved_base
+
 print("OK — пройдено проверок: %d" % len(PASSED))
