@@ -119,6 +119,31 @@ Debug-ключ привязан к машине. Для обновлений н�
 нужен стабильный release-keystore: без него APK с другой подписью не
 установится поверх старого.
 
+### Сохранение ключа сборки 1.15
+
+APK 1.15 подписан debug-ключом Linux-машины. Чтобы следующие версии
+устанавливались поверх него, ключ скопирован вне проекта:
+
+```text
+/tmp/predictor-keys/predictor-debug.keystore
+alias: androiddebugkey, пароль: android
+SHA-256 ключа: 7b8cb2701d7e3ba856f6018e3ab5a76707c1477dd6d94a9e2f90686a536a4c49
+```
+
+Сборка следующей версии с тем же ключом:
+
+```bash
+export PREDICTOR_KEYSTORE=/tmp/predictor-keys/predictor-debug.keystore
+export PREDICTOR_KEYSTORE_PASSWORD=android
+export PREDICTOR_KEY_ALIAS=androiddebugkey
+export PREDICTOR_KEY_PASSWORD=android
+```
+
+Храните файл в надёжном месте вместе с паролем: без него обновления
+поверх 1.15 станут невозможны. Для нового постоянного release-ключа
+(например, при публикации в магазине) создайте `.jks`, подпишите им APK и
+учтите, что первый переход потребует удалить старую версию приложения.
+
 ## 6. Подпись
 
 По умолчанию собирается `debug`-APK с автоматическим debug-keystore. Для
