@@ -38,7 +38,7 @@ def main():
         shutil.rmtree(DEST)
     os.makedirs(os.path.join(DEST, "python"))
 
-    for name in ("app.wsgi", "online_app.py", "README.md"):
+    for name in ("app.wsgi", "online_app.py", "lazy_app.py", "README.md"):
         shutil.copyfile(os.path.join(SOURCE_SERVER, name),
                         os.path.join(DEST, name))
     for name in MODULES:
