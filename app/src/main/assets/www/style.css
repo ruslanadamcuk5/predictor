@@ -871,6 +871,18 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--muted);
 }
 .auto-hint.warn { color: #f2d9a9; }
+.update-progress {
+  height: 7px; border-radius: 10px; background: var(--card-2);
+  border: 1px solid var(--line); overflow: hidden; margin-top: 11px;
+}
+.update-progress span {
+  display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--warn));
+  transition: width 0.2s ease;
+}
+.update-current {
+  display: inline-flex; align-items: center; gap: 6px; margin-right: 4px;
+}
 .auto-rules { display: grid; gap: 8px; margin-top: 10px; }
 .auto-rule {
   border: 1px solid var(--line); border-radius: 12px;

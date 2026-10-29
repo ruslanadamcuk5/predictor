@@ -1,19 +1,31 @@
-# Gradle
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Android / Gradle
 .gradle/
 build/
 local.properties
-
-# Android Studio / IntelliJ
-.idea/
 *.iml
+.idea/
 captures/
 .externalNativeBuild/
 .cxx/
 
-# Keystore
+# Артефакты сборки и релизов
+dist/
+releases/
+*.apk
+*.aab
 *.jks
 *.keystore
 
-# OS
+# Локальные копии и логи
+.backups/
+*.log
 .DS_Store
 Thumbs.db

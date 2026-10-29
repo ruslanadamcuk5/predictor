@@ -11,16 +11,19 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import os
 import sys
 import time
 import traceback
 from datetime import datetime
+from email.utils import formatdate
 
-SERVER_VERSION = "1.14.0"
+SERVER_VERSION = "1.15.0"
 MAX_BODY = 12 * 1024 * 1024
 MAX_PREDICTIONS = 8000
+CHUNK_SIZE = 256 * 1024
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 for _candidate in (
@@ -35,6 +38,15 @@ import analysis_service  # noqa: E402
 TOKEN = str(os.environ.get("PREDICTOR_TOKEN") or "").strip()
 AUTH_REQUIRED = bool(TOKEN)
 
+# Каталог с опубликованными релизами. Можно переопределить переменной окружения
+# PREDICTOR_RELEASES_DIR, например /home/<login>/predictor/releases.
+RELEASES_DIR = os.path.abspath(
+    os.environ.get("PREDICTOR_RELEASES_DIR")
+    or os.path.join(HERE, "releases"))
+RELEASES_PREFIX = "/releases/"
+APK_CONTENT_TYPE = "application/vnd.android.package-archive"
+_SHA256_CACHE = {}
+
 
 class HttpError(Exception):
     def __init__(self, status, message):
@@ -47,7 +59,7 @@ def _now():
     return datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
 
-def _json_response(start_response, data, status=200, extra_headers=None):
+def _json_response(start_response, data, status=200, extra_headers=None, head=False):
     body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
     headers = [
         ("Content-Type", "application/json; charset=utf-8"),
@@ -56,19 +68,21 @@ def _json_response(start_response, data, status=200, extra_headers=None):
         ("X-Predictor-Server", SERVER_VERSION),
         ("Access-Control-Allow-Origin", "*"),
         ("Access-Control-Allow-Headers", "Authorization, Content-Type, Content-Encoding, X-Predictor-Token"),
-        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+        ("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS"),
     ]
     if extra_headers:
         headers.extend(extra_headers)
     start_response("%d %s" % (status, _reason(status)), headers)
-    return [body]
+    return [b""] if head else [body]
 
 
 def _reason(status):
     return {
-        200: "OK", 204: "No Content", 400: "Bad Request",
-        401: "Unauthorized", 404: "Not Found", 405: "Method Not Allowed",
-        413: "Payload Too Large", 500: "Internal Server Error",
+        200: "OK", 204: "No Content", 206: "Partial Content",
+        400: "Bad Request", 401: "Unauthorized", 404: "Not Found",
+        405: "Method Not Allowed", 413: "Payload Too Large",
+        416: "Requested Range Not Satisfiable",
+        500: "Internal Server Error",
     }.get(status, "OK")
 
 
@@ -182,10 +196,224 @@ def analyze(data):
     return payload
 
 
-def _dashboard(environ):
+def _base_url(environ):
     scheme = str(environ.get("wsgi.url_scheme") or "https")
     host = str(environ.get("HTTP_HOST") or "predictor.alwaysdata.net")
-    base = "%s://%s" % (scheme, host)
+    return "%s://%s" % (scheme, host)
+
+
+def _sha256_file(path):
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return ""
+    key = (path, stat.st_size, int(stat.st_mtime))
+    cached = _SHA256_CACHE.get(key)
+    if cached:
+        return cached
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(CHUNK_SIZE), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    value = digest.hexdigest()
+    _SHA256_CACHE.clear()
+    _SHA256_CACHE[key] = value
+    return value
+
+
+def _release_files():
+    try:
+        names = sorted(os.listdir(RELEASES_DIR))
+    except OSError:
+        return []
+    result = []
+    for name in names:
+        if not name.lower().endswith(".apk"):
+            continue
+        path = os.path.join(RELEASES_DIR, name)
+        if os.path.isfile(path):
+            result.append(path)
+    return result
+
+
+def _read_update_file():
+    path = os.path.join(RELEASES_DIR, "update.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        traceback.print_exc()
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _release_apk(manifest):
+    """Возвращает путь к APK из манифеста или самый свежий файл в releases/."""
+    raw = str(manifest.get("url") or manifest.get("apk_url")
+              or manifest.get("apkUrl") or "").strip()
+    if raw:
+        name = os.path.basename(raw.split("?", 1)[0].split("#", 1)[0])
+        if name.lower().endswith(".apk"):
+            candidate = os.path.join(RELEASES_DIR, name)
+            if os.path.isfile(candidate):
+                return candidate
+    files = _release_files()
+    if not files:
+        return ""
+    return max(files, key=lambda path: os.path.getmtime(path))
+
+
+def _int_of(data, *keys):
+    for key in keys:
+        if key in data and data[key] is not None:
+            try:
+                return int(data[key])
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def _str_of(data, *keys):
+    for key in keys:
+        value = data.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def update_manifest(environ):
+    """Манифест обновления в формате, который читает Android-клиент."""
+    data = _read_update_file()
+    apk = _release_apk(data)
+    apk_name = os.path.basename(apk) if apk else ""
+    url = _str_of(data, "url", "apk_url", "apkUrl")
+    if not apk_name:
+        return {
+            "ok": True,
+            "service": "betcity-predictor",
+            "published": False,
+            "version_code": 0,
+            "version_name": "",
+            "url": "",
+            "size": 0,
+            "sha256": "",
+            "notes": "Обновления ещё не опубликованы.",
+            "server_version": SERVER_VERSION,
+            "server_time": _now(),
+        }
+    if not url:
+        url = RELEASES_PREFIX + apk_name
+    size = os.path.getsize(apk)
+    published_at = _str_of(data, "published_at", "date")
+    if not published_at:
+        published_at = datetime.fromtimestamp(
+            os.path.getmtime(apk)).strftime("%d.%m.%Y %H:%M")
+    return {
+        "ok": True,
+        "service": "betcity-predictor",
+        "published": True,
+        "version_code": _int_of(data, "version_code", "versionCode", "code"),
+        "version_name": _str_of(data, "version_name", "versionName", "name"),
+        "url": url,
+        "size": _int_of(data, "size", "bytes") or size,
+        "sha256": (_str_of(data, "sha256", "sha") or _sha256_file(apk)).lower(),
+        "notes": _str_of(data, "notes", "changelog"),
+        "mandatory": bool(data.get("mandatory", False)),
+        "min_sdk": _int_of(data, "min_sdk"),
+        "published_at": published_at,
+        "apk": apk_name,
+        "server_version": SERVER_VERSION,
+        "server_time": _now(),
+    }
+
+
+def _file_response(environ, start_response, path):
+    """Отдаёт APK с поддержкой HEAD, Range и ETag для докачки."""
+    name = os.path.basename(path)
+    try:
+        size = os.path.getsize(path)
+        mtime = int(os.path.getmtime(path))
+    except OSError:
+        raise HttpError(404, "Файл обновления не найден.")
+    etag = '"%x-%x"' % (size, mtime)
+    method = str(environ.get("REQUEST_METHOD") or "GET").upper()
+    headers = [
+        ("Content-Type", APK_CONTENT_TYPE),
+        ("Accept-Ranges", "bytes"),
+        ("Cache-Control", "public, max-age=300"),
+        ("ETag", etag),
+        ("Last-Modified", formatdate(mtime, usegmt=True)),
+        ("Content-Disposition", 'attachment; filename="%s"' % name),
+        ("X-Predictor-Server", SERVER_VERSION),
+        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Expose-Headers", "Content-Length, Content-Range, ETag"),
+    ]
+    start, end, status = 0, size - 1, 200
+    range_header = str(environ.get("HTTP_RANGE") or "").strip()
+    if range_header.lower().startswith("bytes="):
+        spec = range_header[6:].split(",", 1)[0].strip()
+        first, _, last = spec.partition("-")
+        try:
+            if first:
+                start = max(0, int(first))
+                end = int(last) if last else size - 1
+            elif last:
+                length = max(0, int(last))
+                start = max(0, size - length) if length else 0
+                end = size - 1
+        except ValueError:
+            start, end, status = 0, size - 1, 200
+        if status == 200:
+            if start >= size:
+                headers.append(("Content-Range", "bytes */%d" % size))
+                start_response("416 %s" % _reason(416), headers)
+                return [b""]
+            end = min(end, size - 1)
+            if end < start:
+                start, end, status = 0, size - 1, 200
+            else:
+                status = 206
+                headers.append(
+                    ("Content-Range", "bytes %d-%d/%d" % (start, end, size)))
+    length = size if status == 200 else end - start + 1
+    headers.append(("Content-Length", str(length)))
+    start_response("%d %s" % (status, _reason(status)), headers)
+    if method == "HEAD" or length <= 0:
+        return [b""]
+
+    def stream():
+        with open(path, "rb") as handle:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return stream()
+
+
+def _serve_release(environ, start_response, path):
+    name = path[len(RELEASES_PREFIX):].strip("/")
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        raise HttpError(404, "Файл обновления не найден.")
+    if not name.lower().endswith(".apk"):
+        raise HttpError(404, "Файл обновления не найден.")
+    full = os.path.join(RELEASES_DIR, name)
+    if not os.path.isfile(full):
+        raise HttpError(404, "Файл обновления не найден.")
+    return _file_response(environ, start_response, full)
+
+
+def _dashboard(environ):
+    base = _base_url(environ)
     auth = "включён" if AUTH_REQUIRED else "выключен (открытый доступ)"
     html = """<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -228,6 +456,8 @@ def _dashboard(environ):
     <ul>
       <li><code>GET /api/v1/ping</code> — проверка связи.</li>
       <li><code>POST /api/v1/analyze</code> — расчёт анализа и рекомендаций.</li>
+      <li><code>GET /api/v1/update</code> — манифест обновления APK.</li>
+      <li><code>GET /releases/&lt;файл&gt;.apk</code> — файл обновления.</li>
     </ul>
     <div class="muted">Если задан <code>PREDICTOR_TOKEN</code>, передайте
       заголовок <code>Authorization: Bearer …</code>.</div>
@@ -266,6 +496,18 @@ class Application(object):
                 _check_auth(environ)
                 data = _read_body(environ)
                 return _json_response(start_response, analyze(data))
+            if path == "/api/v1/update":
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                # Манифест обновления открыт: приложение должно уметь проверить
+                # новую версию даже без токена доступа к анализу.
+                return _json_response(
+                    start_response, update_manifest(environ),
+                    head=(method == "HEAD"))
+            if path.startswith(RELEASES_PREFIX):
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                return _serve_release(environ, start_response, path)
             if path == "/":
                 if method not in ("GET", "HEAD"):
                     raise HttpError(405, "Метод не поддерживается.")

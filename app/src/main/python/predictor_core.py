@@ -431,6 +431,15 @@ class BotSettings:
             "last_ok": "",
             "last_error": "",
         },
+        # Проверка обновлений APK. manifest_url пуст — берётся адрес
+        # онлайн-сайта + /api/v1/update или встроенный адрес по умолчанию.
+        "updates": {
+            "enabled": True,
+            "manifest_url": "",
+            "last_check": "",
+            "last_error": "",
+            "available_version": "",
+        },
         # активный вид спорта (один на всё приложение)
         "active_sport": "table_tennis",
         "reports": {
@@ -457,7 +466,7 @@ class BotSettings:
 
     NESTED = ("model_thresholds", "allowed_bets", "allowed_sets",
               "general_filters", "telegram", "reports", "notifications",
-              "engine", "auto_rules", "neural", "online")
+              "engine", "auto_rules", "neural", "online", "updates")
 
     def __init__(self, path=SETTINGS_FILE):
         self.path = path
@@ -3521,6 +3530,18 @@ class PredictorEnsemble:
         return summary
 
     # ---------- статус ----------
+    def analysis_revision(self):
+        """Метка изменений истории и правил для автообновления анализа."""
+        try:
+            history = int(self.telegram.revision())
+        except Exception:
+            history = 0
+        try:
+            rules = int(self.constructor.revision())
+        except Exception:
+            rules = 0
+        return "h%d:r%d" % (history, rules)
+
     def status_payload(self):
         with self._lock:
             stats = json.loads(json.dumps(self.stats))
@@ -3535,6 +3556,7 @@ class PredictorEnsemble:
             "algorithm_mode": self.settings.get_algorithm_mode(),
             "sport": self.settings.get_sport(),
             "sport_name": sports.name(self.settings.get_sport()),
+            "revision": self.analysis_revision(),
             "constructor": self.constructor.stats_payload(
                 self.settings.get_sport()),
             "neural": self.nn.status(),

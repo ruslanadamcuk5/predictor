@@ -10,8 +10,8 @@ Android-приложение `by.betcity.predictor` с Python-ядром вну�
 ведёт очередь, результаты, статистику, конструктор правил и анализатор. Сервер
 для работы не нужен. Интерфейс и сообщения — на русском языке.
 
-Текущая версия: **1.14** (`versionCode 15`, `APP_VERSION 1.14.0`).
-Готовый APK: `../Predictor-1.14.apk` относительно корня проекта.
+Текущая версия: **1.15** (`versionCode 16`, `APP_VERSION 1.15.0`).
+Готовый APK: `../Predictor-1.15.apk` относительно корня проекта.
 
 Онлайн-режим необязателен: по умолчанию всё считается на телефоне. Сайт для
 совместного анализа — `server/` (WSGI, alwaysdata), клиент —
@@ -23,7 +23,8 @@ Android-приложение `by.betcity.predictor` с Python-ядром вну�
    приложение хранит в приватной папке Android. При тестах подменяйте `HOME`
    на временную папку, как это делают скрипты в `tests/`.
 2. **Перед существенными правками делайте резервную копию** файлов в
-   `.backups/<дата>_<тема>/`. Git в проекте не используется.
+   `.backups/<дата>_<тема>/` или отдельную git-ветку. Рабочее дерево не должно
+   содержать `__pycache__`, `build/`, `dist/` и локальные файлы.
 3. **Не ломайте обратную совместимость тестов.** В тестах есть monkeypatch
    вызовов predictor-методов с разным числом аргументов; в продакшене уже
    используются fallback-вызовы через `try/except TypeError`.
@@ -38,10 +39,12 @@ Android-приложение `by.betcity.predictor` с Python-ядром вну�
    `tests/test_results_screen.py`.
 6. **Интерфейс на русском.** Подписи, ошибки, шаблоны, документация для
    пользователя — по-русски. Код и имена переменных — английские.
-7. **Версия должна быть согласована** в трёх местах:
+7. **Версия должна быть согласована** во всех местах:
    `app/src/main/python/engine_api.py` (`APP_VERSION`),
+   `server/online_app.py` (`SERVER_VERSION`),
    `app/build.gradle.kts` (`versionCode`, `versionName`),
-   `README.md` и `docs/ai/CHANGELOG.md`.
+   `README.md`, `docs/ai/CHANGELOG.md`, `docs/ai/PROJECT.md`,
+   `docs/ai/BUILD_RELEASE.md`.
 8. **Мост Kotlin ↔ JS синхронный.** Любой вызов `PyApp.*` блокирует UI-поток.
    Не добавляйте в циклы и не вызывайте тяжёлые методы без необходимости.
 9. **JSON-снимки должны оставаться JSON-безопасными.** Для этого есть
@@ -68,7 +71,9 @@ python tests\test_constructor_backend.py
 python tests\test_results_screen.py
 python tests\test_analyzer.py
 python tests\test_auto_rules.py
+python tests\test_recommendations.py
 python tests\test_online_server.py
+python tests\test_release_tool.py
 python tests\test_nn.py
 python tests\test_sports_pipeline.py
 python tests\test_all_sports.py
@@ -83,9 +88,9 @@ $env:ANDROID_HOME="C:\Android"
 C:\Android\gradle-8.7\bin\gradle.bat --no-daemon assembleDebug
 
 # проверка APK
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.14.apk -Force
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.14.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.14.apk
+Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.15.apk -Force
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.15.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.15.apk
 ```
 
 PowerShell часто завершает успешный Python-тест с кодом 1 из-за

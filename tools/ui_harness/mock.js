@@ -31,6 +31,8 @@
     online: { enabled: false, base_url: "https://predictor.alwaysdata.net",
       token: "", timeout: 25, fallback_local: true, verify_ssl: true,
       last_ok: "", last_error: "" },
+    updates: { enabled: true, manifest_url: "", last_check: "",
+      last_error: "", available_version: "" },
   };
 
   const nnMarketsOf = (id) => {
@@ -834,6 +836,25 @@
         state: { seen: 2, applied: advisorApplied.length, resolved: 0,
           dismissed: advisorDismissed.length } });
     },
+    updateInfo: () => JSON.stringify({ ok: true, version_code: 16,
+      version_name: "1.15", package: "by.betcity.predictor" }),
+    updateCheck: (url, token, manual) => {
+      settings.updates.last_check = now();
+      setTimeout(() => {
+        if (typeof window !== "undefined" && window.PredictorUpdate) {
+          window.PredictorUpdate.onEvent(JSON.stringify({ type: "check",
+            ok: true, manual: !!manual, checked: true, available: false,
+            current_code: 16, current_name: "1.15", version_code: 16,
+            version_name: "1.15", url: "", sha256: "", size: 0,
+            notes: "Стенд: обновлений нет." }));
+        }
+      }, 120);
+      return JSON.stringify({ ok: true, started: true });
+    },
+    updateDownload: () => JSON.stringify({ ok: false,
+      error: "Стенд: скачивание APK недоступно." }),
+    updateInstall: () => JSON.stringify({ ok: false,
+      error: "Стенд: установка APK недоступна." }),
     online: (payload) => {
       let opts = {};
       try { opts = JSON.parse(payload || "{}"); } catch (e) { opts = {}; }
@@ -854,7 +875,7 @@
         settings.online.last_ok = "20.10.2026 12:34:00";
         settings.online.last_error = "";
         return JSON.stringify({ ok: true, url: settings.online.base_url,
-          latency_ms: 42, version: "1.14.0", auth: !!settings.online.token,
+          latency_ms: 42, version: "1.15.0", auth: !!settings.online.token,
           message: "Связь с сайтом установлена." });
       }
       return JSON.stringify({ ok: true, enabled: !!settings.online.enabled,

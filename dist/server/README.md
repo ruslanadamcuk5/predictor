@@ -15,6 +15,8 @@
 | GET | `/` | Страница состояния |
 | GET | `/api/v1/ping` | Проверка связи |
 | POST | `/api/v1/analyze` | Анализ истории и рекомендации |
+| GET/HEAD | `/api/v1/update` | Манифест обновления APK |
+| GET/HEAD | `/releases/<файл>.apk` | APK с поддержкой `Range` |
 
 Если задана переменная окружения `PREDICTOR_TOKEN`, запросы к API требуют
 заголовок:
@@ -24,6 +26,8 @@ Authorization: Bearer <токен>
 ```
 
 Без токена сайт открыт всем. Для личного сервера токен обязателен.
+`/api/v1/update` и файлы из `/releases/` открыты без токена: приложение должно
+проверять обновление и до входа в онлайн-режим.
 
 ## Сборка папки для загрузки
 
@@ -46,7 +50,13 @@ python/
   rule_advisor.py
   constructor_engine.py
   sports.py
+releases/
+  update.json
+  predictor-1.15.apk
 ```
+
+Если релизы ещё не опубликованы, `releases/` будет пустым, а
+`/api/v1/update` вернёт `published: false`.
 
 ## alwaysdata.com: пошагово
 
@@ -64,7 +74,10 @@ python/
 6. В **Environment variables** сайта добавьте:
    ```
    PREDICTOR_TOKEN=<длинная случайная строка>
+   PREDICTOR_RELEASES_DIR=/home/LOGIN/predictor/releases
    ```
+   Вторую переменную можно не задавать, если `releases/` лежит рядом с
+   `online_app.py`.
    Сгенерировать токен можно командой `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 7. Сохраните сайт и откройте выданный адрес, например
    `https://LOGIN.alwaysdata.net`. Должна открыться страница состояния.
@@ -73,6 +86,12 @@ python/
    curl https://LOGIN.alwaysdata.net/api/v1/ping -H "Authorization: Bearer TOKEN"
    ```
    Ответ содержит `"ok": true` и версию сервера.
+
+9. Проверьте обновление:
+   ```bash
+   curl https://LOGIN.alwaysdata.net/api/v1/update
+   ```
+   Должны прийти `version_code`, `version_name`, `url`, `size`, `sha256`.
 
 Если alwaysdata показывает ошибку 500, откройте **Web → Sites → ваш сайт →
 Logs** и проверьте traceback. Чаще всего причина — неверный путь к `app.wsgi`
@@ -101,10 +120,31 @@ curl -X POST https://LOGIN.alwaysdata.net/api/v1/analyze \
 Ответ: JSON с полями `ok`, `observations`, `failure`, `success`,
 `rule_reviews`, `recommendations`, `advisor_state`, `server_version`.
 
-## Обновление
+## Публикация APK для автообновления
+
+Сначала соберите APK, затем из корня проекта:
+
+```bash
+python tools/publish_release.py app/build/outputs/apk/release/app-release.apk \
+    --notes "Что нового"
+python tools/prepare_server.py
+scp -r dist/server/* LOGIN@ssh-LOGIN.alwaysdata.net:/home/LOGIN/predictor/
+```
+
+Скрипт берёт версию из `app/build.gradle.kts`, копирует APK в `releases/`,
+считает SHA-256 и пишет `releases/update.json`. Старые APK удаляются по
+`--keep` (по умолчанию 3). Проверить манифест без публикации:
+`--dry-run`.
+
+Приложение при запуске запрашивает `GET /api/v1/update`. Если `version_code`
+больше установленного, оно скачивает APK, сверяет SHA-256 и открывает
+системный установщик. Обновление встанет только поверх APK с той же подписью.
+
+## Обновление серверного кода
 
 Повторите `python tools\prepare_server.py` и загрузите `dist/server/*` поверх
-старых файлов. Каталог `python/` можно заменить целиком.
+старых файлов. Каталог `python/` можно заменить целиком; `releases/` сохраняйте,
+если не хотите заново публиковать APK.
 
 ## Ограничения
 

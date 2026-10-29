@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.15.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -1268,6 +1268,7 @@ class Engine:
                     "enabled": bool(cfg.get("enabled")),
                     "min_precision": cfg.get("min_precision"),
                     "min_samples": cfg.get("min_samples")})
+                remote["revision"] = self.predictor.analysis_revision()
                 self._online_last = {
                     "at": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                     "ok": True,
@@ -1307,6 +1308,7 @@ class Engine:
         if cached is not None:
             payload = self._cached_payload(cached)
             payload["online"] = False
+            payload["revision"] = self.predictor.analysis_revision()
             if online_error:
                 payload["online_error"] = online_error
             self._remember_recommendations(payload)
@@ -1324,6 +1326,7 @@ class Engine:
             result = built.get("payload") or {}
             result["online"] = False
             result["version"] = APP_VERSION
+            result["revision"] = self.predictor.analysis_revision()
             if online_error:
                 result["online_error"] = online_error
             self._remember_recommendations(result)
@@ -1338,6 +1341,7 @@ class Engine:
             result = self._analyzer_error(exc)
             result["version"] = APP_VERSION
             result["online"] = False
+            result["revision"] = self.predictor.analysis_revision()
             if online_error:
                 result["online_error"] = online_error
             return self._json(result)

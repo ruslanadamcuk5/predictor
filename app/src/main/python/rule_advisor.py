@@ -760,6 +760,35 @@ def recommend(sent_predictions, sports=None, rules_by_sport=None,
                 "rule_id": rec.get("rule_id"),
             }
 
+    # Рекомендация была на экране и больше не воспроизводится: значит, её
+    # правку применили (в приложении или вручную) либо данные изменились.
+    # Закрываем её явно, чтобы интерфейс показал жизненный цикл, а не тихое
+    # исчезновение. Если такая рекомендация появится снова, она будет новой.
+    current_ids = set(best.keys())
+    for rec_id, item in list(seen.items()):
+        if rec_id in current_ids:
+            continue
+        sport = str((item or {}).get("sport") or "")
+        if sport not in selected:
+            continue
+        rule_id = (item or {}).get("rule_id")
+        rule = _rule_by_id(_sport_rules(rules_by_sport, sport), rule_id)
+        reason = "Рекомендация больше не актуальна"
+        resolved.append({
+            "id": rec_id,
+            "sport": sport,
+            "rule_id": rule_id,
+            "rule_name": _rule_name(rule, sport) if rule else "",
+            "type": (item or {}).get("type"),
+            "reason": reason,
+            "resolved_at": now_iso,
+        })
+        state.setdefault("resolved", {})[rec_id] = {
+            "at": now_iso, "reason": reason,
+            "sport": sport, "rule_id": rule_id,
+        }
+        seen.pop(rec_id, None)
+
     result.sort(key=lambda item: (
         0 if item.get("is_new") else 1,
         SEVERITY_ORDER.get(item.get("severity"), 9),

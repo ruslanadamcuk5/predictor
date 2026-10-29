@@ -10,7 +10,7 @@
 
 Не проверено: запуск Chaquopy на реальном телефоне, реальная линия в
 приложении, системные уведомления, foreground-сервис, переключение видов на
-устройстве.
+устройстве, установка автообновления поверх предыдущей версии.
 
 ## 2. Окружение
 
@@ -20,8 +20,8 @@ $env:PYTHONIOENCODING="utf-8"
 ```
 
 Python 3.13. Chaquopy собирает `app.imy` тем же buildPython, который указан в
-`app/build.gradle.kts` (`C:/Program Files/Python313/python.exe`). На другой
-машине путь нужно поправить.
+`app/build.gradle.kts`. Скрипт ищет Python 3.13 автоматически; на другой машине
+путь можно задать переменной `CHAQUOPY_BUILD_PYTHON`.
 
 PowerShell показывает `RequestsDependencyWarning` и завершает команду с кодом
 1 даже при успешном тесте. Смотрите итоговую строку теста.
@@ -43,6 +43,9 @@ python tests\test_constructor.py
 python tests\test_sports_pipeline.py
 python tests\test_analyzer.py
 python tests\test_auto_rules.py
+python tests\test_recommendations.py
+python tests\test_release_tool.py
+python tests\test_online_server.py
 ```
 
 Ключевые пороги, при которых изменение считается регрессией:
@@ -58,6 +61,9 @@ python tests\test_auto_rules.py
 | Метрики по видам | 403 вычисления |
 | Анализатор | 108 проверок |
 | Авто-правила | 36 проверок |
+| Рекомендации | 36 проверок |
+| Публикация релиза | 20 проверок |
+| Онлайн-сервер | 51 проверка |
 | Экран результатов | 32 проверки |
 
 Если число уменьшилось — удалена функциональность. Если выросло — проверьте,
@@ -124,7 +130,7 @@ python -m http.server 8765 --bind 127.0.0.1   # из tools/ui_harness
 Требуется arm64 Android 7.0+ (или x86_64 эмулятор).
 
 ```powershell
-adb install -r ..\Predictor-1.13.apk
+adb install -r ..\Predictor-1.15.apk
 adb logcat -c
 adb shell am start -n by.betcity.predictor/.MainActivity
 adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
@@ -133,7 +139,7 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 Чек-лист:
 
 01. Приложение запускается, статус-бар скрыт.
-02. Панель показывает версию 1.13, активный вид и число матчей во всех видах.
+02. Панель показывает версию 1.15, активный вид и число матчей во всех видах.
 03. «Проверить» возвращает Betcity: ok и суммарное число матчей; в сводке есть
     `sports` и `by_sport` для нескольких видов.
 04. Переключение всех 6 видов не роняет приложение и не останавливает анализ.
@@ -226,27 +232,28 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 ## 7. Проверка APK
 
 ```powershell
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.13.apk -Force
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.13.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.13.apk
+Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.15.apk -Force
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.15.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.15.apk
 ```
 
 Ожидается:
 
-- `versionCode 14`, `versionName 1.13`;
+- `versionCode 16`, `versionName 1.15`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;
 - подпись debug `CN=Android Debug`;
 - в ZIP есть `assets/www/app.js`, `assets/www/docs.js` и
   `assets/chaquopy/app.imy`;
-- в `app.imy` есть `sports.pyc`, а `engine_api.pyc` содержит строку
-  `1.13.0` и `score_cache`.
+- в `app.imy` есть `sports.py` и `rule_advisor.py`, а `engine_api.py`
+  содержит строку `1.15.0` и `score_cache` (Chaquopy 17 пакует исходники,
+  не `.pyc`).
 
 Проверка содержимого:
 
 ```powershell
-python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.13.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
+python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.15.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
 ```
 
 ## 8. Что считается неудачей

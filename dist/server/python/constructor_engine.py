@@ -3314,6 +3314,11 @@ class ConstructorEngine:
         self._lock = threading.RLock()
         self._stats = {"matches": 0, "fired": 0, "skipped": 0, "rules": 0}
         self._rules = {"table_tennis": self._load_file(self.path, "table_tennis")}
+        self._rev = 0
+
+    def revision(self):
+        with self._lock:
+            return self._rev
 
     # ---------- хранение ----------
     def _path_for(self, sport):
@@ -3411,6 +3416,7 @@ class ConstructorEngine:
             ok = self._save_file(cleaned, sport)
             if ok:
                 self._rules[sport] = cleaned
+                self._rev += 1
         return ok, ([] if ok else ["Не удалось записать файл правил"]), \
             self.snapshot(sport)
 

@@ -8,6 +8,7 @@
     app.wsgi          — точка входа WSGI
     online_app.py     — само приложение
     python/           — модули анализатора и конструктора
+    releases/         — APK и манифест update.json (если опубликованы)
     README.md         — памятка по настройке сайта
 """
 
@@ -19,6 +20,7 @@ import shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_PY = os.path.join(ROOT, "app", "src", "main", "python")
 SOURCE_SERVER = os.path.join(ROOT, "server")
+SOURCE_RELEASES = os.path.join(ROOT, "releases")
 DEST = os.path.join(ROOT, "dist", "server")
 
 MODULES = (
@@ -43,9 +45,25 @@ def main():
         shutil.copyfile(os.path.join(SOURCE_PY, name),
                         os.path.join(DEST, "python", name))
 
+    releases_dest = os.path.join(DEST, "releases")
+    os.makedirs(releases_dest, exist_ok=True)
+    copied = 0
+    if os.path.isdir(SOURCE_RELEASES):
+        for name in sorted(os.listdir(SOURCE_RELEASES)):
+            if not (name.lower().endswith(".apk") or name == "update.json"):
+                continue
+            source = os.path.join(SOURCE_RELEASES, name)
+            if os.path.isfile(source):
+                shutil.copyfile(source, os.path.join(releases_dest, name))
+                copied += 1
+
     print("Готово:", DEST)
     print("Загрузите содержимое dist/server в каталог сайта alwaysdata.")
     print("Точка входа WSGI: app.wsgi")
+    if copied:
+        print("Релизов скопировано: %d (GET /api/v1/update)" % copied)
+    else:
+        print("Релизы не найдены: сначала выполните tools/publish_release.py.")
     print("Не забудьте задать PREDICTOR_TOKEN в переменных окружения сайта.")
 
 

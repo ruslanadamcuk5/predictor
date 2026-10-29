@@ -39,6 +39,15 @@ const state = {
   },
   aiChat: [],
   timers: {},
+  updates: {
+    info: null,
+    checking: false,
+    busy: false,
+    path: '',
+    error: '',
+    progress: 0,
+    current: null,
+  },
 };
 
 state.docs = {
@@ -158,6 +167,49 @@ function analyzerSportsToggleBase() {
   return analyzerSportsEffective().slice();
 }
 
+// Фильтры анализатора переживают перезапуск приложения. Пустой список
+// видов означает «активный вид» — так экран открывается предсказуемо.
+const AN_FILTER_KEY = 'predictor.analyzer.filter.v1';
+
+function analyzerFilterDefaults() {
+  return { kind: 'all', target: '', min_group: 3, min_lift: 20, sport: '', sports: [] };
+}
+
+function loadAnalyzerFilter() {
+  const base = analyzerFilterDefaults();
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(AN_FILTER_KEY) || 'null');
+  } catch (e) {
+    saved = null;
+  }
+  if (!saved || typeof saved !== 'object') return base;
+  const known = sportList().map(item => item.id);
+  const sports = Array.isArray(saved.sports)
+    ? saved.sports.filter(id => known.indexOf(id) >= 0) : [];
+  const kinds = ['all', 'winner', 'total', 'handicap', 'btts'];
+  const kind = kinds.indexOf(saved.kind) >= 0 ? saved.kind : 'all';
+  const target = /^(match|set[1-5])$/.test(String(saved.target || ''))
+    ? String(saved.target) : '';
+  return {
+    kind: kind,
+    target: target,
+    min_group: [2, 3, 5].indexOf(num(saved.min_group)) >= 0 ? num(saved.min_group) : 3,
+    min_lift: [10, 20, 40].indexOf(num(saved.min_lift)) >= 0 ? num(saved.min_lift) : 20,
+    sport: '',
+    sports: sports,
+  };
+}
+
+function saveAnalyzerFilter() {
+  if (!state.an) return;
+  try {
+    localStorage.setItem(AN_FILTER_KEY, JSON.stringify(state.an.filter));
+  } catch (e) {
+    /* приватный режим WebView — работаем без сохранения */
+  }
+}
+
 function renderAnalyzerSportChecks() {
   const box = $('anSport');
   if (!box) return;
@@ -240,6 +292,10 @@ function updateAnalyzerSportUI() {
     'active', (btn.dataset.target || '') === state.an.filter.target));
   qsa('#anKind button').forEach(btn => btn.classList.toggle(
     'active', (btn.dataset.kind || 'all') === state.an.filter.kind));
+  qsa('#anMinGroup button').forEach(btn => btn.classList.toggle(
+    'active', num(btn.dataset.min) === num(state.an.filter.min_group)));
+  qsa('#anMinLift button').forEach(btn => btn.classList.toggle(
+    'active', num(btn.dataset.lift) === num(state.an.filter.min_lift)));
   renderAnalyzerSportChecks();
 }
 
@@ -258,12 +314,12 @@ function setActiveSport(id) {
     state.ctor.sport = state.sport;
     state.queue = [];
     state.resultsSignature = '';
+    // Явный выбор видов на экране «Анализ» не сбрасываем: пользователь
+    // мог отметить несколько видов и переключить активный для правил.
     state.an.filter.sport = '';
-    state.an.filter.sports = [];
-    state.an.filter.target = '';
-    state.an.filter.kind = 'all';
     renderSportSelectors();
     updateAnalyzerSportUI();
+    saveAnalyzerFilter();
     loadConstructor();
     refreshQueue(true);
     refreshResults();
@@ -1298,6 +1354,328 @@ function bindAi() {
   }
 }
 
+/* ---------------- обновления APK ---------------- */
+
+const DEFAULT_UPDATE_URL = 'https://predictor.alwaysdata.net/api/v1/update';
+const UPDATE_SKIP_KEY = 'predictor.update.skip';
+
+function updateCfg() {
+  return Object.assign({ enabled: true, manifest_url: '' },
+    (state.settings || {}).updates || {});
+}
+
+function updateManifestUrl() {
+  const cfg = updateCfg();
+  const explicit = String(cfg.manifest_url || '').trim();
+  if (explicit) return explicit;
+  const base = String(((state.settings || {}).online || {}).base_url || '')
+    .trim().replace(/\/+$/, '');
+  if (base) return base + '/api/v1/update';
+  return DEFAULT_UPDATE_URL;
+}
+
+function updateToken() {
+  return String(((state.settings || {}).online || {}).token || '').trim();
+}
+
+function skippedUpdateCode() {
+  try {
+    return num(localStorage.getItem(UPDATE_SKIP_KEY)) || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function skipUpdate(code) {
+  try {
+    localStorage.setItem(UPDATE_SKIP_KEY, String(num(code) || 0));
+  } catch (e) { /* ignore */ }
+}
+
+function formatBytes(value) {
+  const size = num(value);
+  if (!size) return '—';
+  if (size >= 1024 * 1024) return (size / (1024 * 1024)).toFixed(1) + ' МБ';
+  if (size >= 1024) return Math.round(size / 1024) + ' КБ';
+  return size + ' Б';
+}
+
+function updateCurrentLabel(info) {
+  const item = info || state.updates.current || {};
+  if (!item.version_name && !item.version_code) return '—';
+  return 'v' + (item.version_name || item.version_code) +
+    (item.version_code ? ' (' + item.version_code + ')' : '');
+}
+
+function renderUpdateProgress() {
+  const box = $('setUpdateProgress');
+  if (!box) return;
+  const bar = box.querySelector('span');
+  const active = state.updates.busy || state.updates.progress > 0;
+  box.classList.toggle('hidden', !active);
+  if (bar) bar.style.width = Math.max(0, Math.min(100, num(state.updates.progress))) + '%';
+}
+
+function renderUpdateSettings() {
+  const cfg = updateCfg();
+  const info = state.updates.info || {};
+  const current = state.updates.current || {};
+  if ($('setUpdateEnabled')) $('setUpdateEnabled').checked = cfg.enabled !== false;
+  if ($('setUpdateUrl')) $('setUpdateUrl').value = cfg.manifest_url || '';
+  if ($('setUpdateCurrent')) {
+    $('setUpdateCurrent').textContent = updateCurrentLabel(current);
+  }
+  const badge = $('setUpdateBadge');
+  if (badge) {
+    if (state.updates.checking) {
+      badge.textContent = 'проверка';
+      badge.className = 'badge';
+    } else if (state.updates.error) {
+      badge.textContent = 'ошибка';
+      badge.className = 'badge warn';
+    } else if (info.available) {
+      badge.textContent = 'v' + (info.version_name || info.version_code);
+      badge.className = 'badge warn';
+    } else if (info.checked) {
+      badge.textContent = 'актуально';
+      badge.className = 'badge ok';
+    } else {
+      badge.textContent = '—';
+      badge.className = 'badge';
+    }
+  }
+  const install = $('btnUpdateInstall');
+  if (install) {
+    install.classList.toggle('hidden', !(info.available || state.updates.path));
+    install.textContent = state.updates.path ? 'Установить загруженное' : 'Скачать и установить';
+  }
+  const hint = $('setUpdateHint');
+  if (hint) {
+    let text = 'Текущая версия: ' + updateCurrentLabel(current) + '.';
+    if (state.updates.checking) {
+      text += ' Проверяем сайт…';
+    } else if (state.updates.error) {
+      text += ' ' + state.updates.error;
+    } else if (info.available) {
+      text += ' На сайте новая версия ' + updateCurrentLabel(info) + '.';
+    } else if (info.checked) {
+      text += ' Обновлений нет.';
+    }
+    hint.textContent = text;
+    hint.className = 'auto-hint' + (state.updates.error ? ' warn' : '');
+  }
+  renderUpdateProgress();
+}
+
+function renderUpdateModal() {
+  const info = state.updates.info || {};
+  const body = $('updateBody');
+  if (!body) return;
+  const notes = String(info.notes || '').trim();
+  const rows = [
+    '<div class="field-row"><div><div class="field-title">Сейчас</div>' +
+      '<div class="field-hint">' + esc(updateCurrentLabel(state.updates.current)) + '</div></div>' +
+      '<div><div class="field-title">Новая версия</div>' +
+      '<div class="field-hint">' + esc(updateCurrentLabel(info)) + '</div></div></div>',
+  ];
+  if (info.size) {
+    rows.push('<div class="field-hint">Размер: ' + esc(formatBytes(info.size)) +
+      (info.published_at ? ' · опубликовано ' + esc(info.published_at) : '') + '</div>');
+  }
+  if (notes) rows.push('<div class="an-reco">' + esc(notes) + '</div>');
+  if (state.updates.busy) {
+    rows.push('<div class="auto-hint">Загрузка… ' + Math.round(num(state.updates.progress)) + '%</div>');
+  } else if (state.updates.path) {
+    rows.push('<div class="auto-hint">Файл скачан и проверен. Нажмите «Установить».</div>');
+  } else if (state.updates.error) {
+    rows.push('<div class="auto-hint warn">' + esc(state.updates.error) + '</div>');
+  }
+  body.innerHTML = rows.join('');
+  const install = $('btnUpdateNow');
+  if (install) {
+    install.disabled = !!state.updates.busy;
+    install.textContent = state.updates.busy ? 'Загрузка…'
+      : (state.updates.path ? 'Установить' : 'Скачать и установить');
+  }
+  const later = $('btnUpdateLater');
+  if (later) later.classList.toggle('hidden', !!info.mandatory);
+  const close = $('btnCloseUpdate');
+  if (close) close.classList.toggle('hidden', !!info.mandatory);
+}
+
+function showUpdateModal(info) {
+  state.updates.info = info || state.updates.info;
+  state.updates.error = '';
+  state.updates.path = '';
+  state.updates.progress = 0;
+  renderUpdateModal();
+  const modal = $('updateModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function hideUpdateModal() {
+  const modal = $('updateModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function handleUpdateEvent(raw) {
+  let evt = raw;
+  if (typeof evt === 'string') {
+    try { evt = JSON.parse(evt); } catch (e) { return; }
+  }
+  if (!evt || !evt.type) return;
+  if (evt.type === 'check') {
+    state.updates.checking = false;
+    if (!evt.ok) {
+      state.updates.error = evt.error || 'Не удалось проверить обновления.';
+      renderUpdateSettings();
+      if (evt.manual) toast(state.updates.error, 'error');
+      return;
+    }
+    state.updates.current = {
+      version_code: evt.current_code,
+      version_name: evt.current_name,
+    };
+    state.updates.info = Object.assign({ checked: true }, evt);
+    state.updates.error = '';
+    renderUpdateSettings();
+    if (evt.available) {
+      const skip = skippedUpdateCode();
+      const code = num(evt.version_code);
+      if (evt.manual || evt.mandatory || skip !== code) showUpdateModal(evt);
+    } else if (evt.manual) {
+      toast('Установлена последняя версия', 'ok');
+      hideUpdateModal();
+    }
+    return;
+  }
+  if (evt.type === 'progress') {
+    state.updates.busy = true;
+    state.updates.progress = num(evt.percent);
+    renderUpdateProgress();
+    renderUpdateModal();
+    return;
+  }
+  if (evt.type === 'download') {
+    state.updates.busy = false;
+    if (!evt.ok) {
+      state.updates.error = evt.error || 'Не удалось скачать обновление.';
+      state.updates.progress = 0;
+      renderUpdateProgress();
+      renderUpdateSettings();
+      renderUpdateModal();
+      if (!evt.silent) toast(state.updates.error, 'error');
+      return;
+    }
+    state.updates.path = evt.path || '';
+    state.updates.progress = 100;
+    renderUpdateProgress();
+    renderUpdateSettings();
+    renderUpdateModal();
+    if (state.updates.path) installUpdate(state.updates.path);
+    return;
+  }
+  if (evt.type === 'install') {
+    if (!evt.ok) {
+      state.updates.error = evt.error || 'Не удалось запустить установку.';
+      renderUpdateSettings();
+      renderUpdateModal();
+      if (evt.permission) {
+        toast('Разрешите установку приложений из этого источника и повторите', 'error');
+      } else {
+        toast(state.updates.error, 'error');
+      }
+    } else {
+      toast('Открыт установщик Android', 'ok');
+    }
+  }
+}
+
+window.PredictorUpdate = { onEvent: handleUpdateEvent };
+
+function checkUpdates(manual) {
+  if (!bridge || !bridge.updateCheck) {
+    if (manual) toast('Обновления доступны только в приложении', 'error');
+    return;
+  }
+  const url = updateManifestUrl();
+  if (!url) {
+    if (manual) toast('Укажите адрес манифеста обновлений', 'error');
+    return;
+  }
+  state.updates.checking = true;
+  state.updates.error = '';
+  renderUpdateSettings();
+  const res = call('updateCheck', url, updateToken(), !!manual);
+  if (!res || !res.ok) {
+    state.updates.checking = false;
+    state.updates.error = (res && res.error) || 'Не удалось запустить проверку.';
+    renderUpdateSettings();
+    if (manual) toast(state.updates.error, 'error');
+  }
+}
+
+function downloadUpdate() {
+  const info = state.updates.info || {};
+  if (state.updates.path) {
+    installUpdate(state.updates.path);
+    return;
+  }
+  if (!info.url) {
+    toast('В манифесте нет ссылки на APK', 'error');
+    return;
+  }
+  if (!bridge || !bridge.updateDownload) {
+    toast('Обновления доступны только в приложении', 'error');
+    return;
+  }
+  state.updates.busy = true;
+  state.updates.progress = 0;
+  state.updates.error = '';
+  state.updates.path = '';
+  renderUpdateModal();
+  renderUpdateSettings();
+  const res = call('updateDownload', info.url, info.sha256 || '',
+    info.version_name || '', updateToken());
+  if (!res || !res.ok) {
+    state.updates.busy = false;
+    state.updates.error = (res && res.error) || 'Не удалось начать загрузку.';
+    renderUpdateSettings();
+    renderUpdateModal();
+  }
+}
+
+function installUpdate(path) {
+  if (!bridge || !bridge.updateInstall) {
+    toast('Установка доступна только в приложении', 'error');
+    return;
+  }
+  const res = call('updateInstall', path || state.updates.path || '');
+  if (!res || !res.ok) {
+    toast((res && res.error) || 'Не удалось запустить установку', 'error');
+  }
+}
+
+function loadUpdateInfo() {
+  if (!bridge || !bridge.updateInfo) return;
+  const info = call('updateInfo');
+  if (info && info.ok) {
+    state.updates.current = info;
+    renderUpdateSettings();
+  }
+}
+
+function initUpdates() {
+  loadUpdateInfo();
+  renderUpdateSettings();
+  const cfg = updateCfg();
+  if (cfg.enabled === false) return;
+  setTimeout(() => {
+    if ((state.settings || {}).updates === undefined) return;
+    checkUpdates(false);
+  }, 2200);
+}
+
 /* ---------------- статус / панель ---------------- */
 
 function applyStatus(payload) {
@@ -1362,6 +1740,23 @@ function applyStatus(payload) {
     updateAnalyzerSportUI();
   }
   if ($('infoSport')) $('infoSport').textContent = state.sportName;
+
+  // Новые результаты или изменённые правила меняют revision. Если экран
+  // «Анализ» открыт, пересчитываем его без ручного обновления.
+  if (payload.revision) {
+    const nextRevision = String(payload.revision);
+    if (!state.an.revision) {
+      state.an.revision = nextRevision;
+    } else if (nextRevision !== state.an.revision) {
+      if (state.screen === 'analyzer' && !state.an.busy
+          && Date.now() - state.an.lastRefreshAt > 1500) {
+        refreshAnalyzer(true);
+        state.an.revision = nextRevision;
+      } else if (!state.an.busy) {
+        state.an.revision = nextRevision;
+      }
+    }
+  }
 
   const tg = payload.telegram || {};
   $('infoTelegram').textContent = !tg.enabled ? 'выключен'
@@ -2064,6 +2459,14 @@ function renderSettings(s) {
   }
   renderOnlineStatus();
 
+  const updates = s.updates || {};
+  if ($('setUpdateEnabled')) $('setUpdateEnabled').checked = updates.enabled !== false;
+  if ($('setUpdateUrl')) $('setUpdateUrl').value = updates.manifest_url || '';
+  if (!state.updates.info && updates.last_error) {
+    state.updates.error = updates.last_error;
+  }
+  renderUpdateSettings();
+
   const mode = s.algorithm_mode === 'constructor' ? 'constructor' : 'builtin';
   state.ctor.mode = mode;
   syncModeUI(mode);
@@ -2169,6 +2572,11 @@ function collectSettings() {
       ? $('setOnlineVerify').checked : true,
   });
 
+  s.updates = Object.assign({}, s.updates || {}, {
+    enabled: $('setUpdateEnabled') ? $('setUpdateEnabled').checked : true,
+    manifest_url: $('setUpdateUrl') ? $('setUpdateUrl').value.trim() : '',
+  });
+
   s.algorithm_mode = state.ctor.mode || s.algorithm_mode || 'builtin';
   s.active_sport = state.sport;
 
@@ -2189,6 +2597,7 @@ function saveSettings() {
         ? Object.assign({}, state.ai.status || {},
                         { provider: (res.settings.ai || {}).provider })
         : state.ai.status);
+      renderUpdateSettings();
       toast('Настройки сохранены', 'ok');
     } else {
       toast('Не удалось сохранить', 'error');
@@ -2309,6 +2718,7 @@ function bind() {
     state.an.filter.sports = picked;
     state.an.filter.sport = '';
     updateAnalyzerSportUI();
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
   const anSportTools = $('anSportTools') || document.querySelector('.an-sport-tools');
@@ -2319,6 +2729,7 @@ function bind() {
       ? sportList().map(item => item.id) : [];
     state.an.filter.sport = '';
     updateAnalyzerSportUI();
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
 
@@ -2489,6 +2900,7 @@ function bind() {
     if (!btn) return;
     state.an.filter.kind = btn.dataset.kind;
     qsa('#anKind button').forEach(b => b.classList.toggle('active', b === btn));
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
   $('anTarget').addEventListener('click', e => {
@@ -2496,6 +2908,7 @@ function bind() {
     if (!btn) return;
     state.an.filter.target = btn.dataset.target;
     qsa('#anTarget button').forEach(b => b.classList.toggle('active', b === btn));
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
   $('anMinGroup').addEventListener('click', e => {
@@ -2503,6 +2916,7 @@ function bind() {
     if (!btn) return;
     state.an.filter.min_group = num(btn.dataset.min);
     qsa('#anMinGroup button').forEach(b => b.classList.toggle('active', b === btn));
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
   $('anMinLift').addEventListener('click', e => {
@@ -2510,6 +2924,7 @@ function bind() {
     if (!btn) return;
     state.an.filter.min_lift = num(btn.dataset.lift);
     qsa('#anMinLift button').forEach(b => b.classList.toggle('active', b === btn));
+    saveAnalyzerFilter();
     refreshAnalyzer();
   });
   $('btnAnFailMore').addEventListener('click', () => {
@@ -2543,6 +2958,40 @@ function bind() {
   if (onlineSettings) onlineSettings.addEventListener('click', () => navigate('settings'));
   const settingsOnlineTest = $('btnOnlineTestSettings');
   if (settingsOnlineTest) settingsOnlineTest.addEventListener('click', testOnlineSettings);
+
+  const updateCheck = $('btnUpdateCheck');
+  if (updateCheck) updateCheck.addEventListener('click', () => {
+    const cfg = updateCfg();
+    if (cfg.enabled === false) {
+      toast('Проверка обновлений выключена в настройках', 'error');
+      return;
+    }
+    checkUpdates(true);
+  });
+  const updateInstallBtn = $('btnUpdateInstall');
+  if (updateInstallBtn) updateInstallBtn.addEventListener('click', () => {
+    if (state.updates.path) { installUpdate(state.updates.path); return; }
+    if (!state.updates.info || !state.updates.info.available) {
+      checkUpdates(true);
+      return;
+    }
+    showUpdateModal(state.updates.info);
+    downloadUpdate();
+  });
+  const updateNow = $('btnUpdateNow');
+  if (updateNow) updateNow.addEventListener('click', downloadUpdate);
+  const updateLater = $('btnUpdateLater');
+  if (updateLater) updateLater.addEventListener('click', () => {
+    const info = state.updates.info || {};
+    if (!info.mandatory) skipUpdate(info.version_code);
+    hideUpdateModal();
+  });
+  const closeUpdate = $('btnCloseUpdate');
+  if (closeUpdate) closeUpdate.addEventListener('click', () => {
+    const info = state.updates.info || {};
+    if (!info.mandatory) skipUpdate(info.version_code);
+    hideUpdateModal();
+  });
 }
 
 function onAnalyzerListClick(event) {
@@ -2551,7 +3000,8 @@ function onAnalyzerListClick(event) {
   const group = btn.dataset.anAdd;
   const row = analyzerRow(group, num(btn.dataset.anIndex));
   if (!row) return;
-  analyzerToConstructor([row.condition], group === 'failure', row.text, [row.text]);
+  analyzerToConstructor([row.condition], group === 'failure', row.text, [row.text],
+    btn.dataset.anSport || row.sport);
 }
 
 function onAnalyzerComboClick(event) {
@@ -2562,7 +3012,7 @@ function onAnalyzerComboClick(event) {
   const combo = combos[num(btn.dataset.anIndex)];
   if (!combo) return;
   analyzerToConstructor(combo.conditions, group === 'failure', combo.text,
-    combo.texts || [combo.text]);
+    combo.texts || [combo.text], btn.dataset.anSport || combo.sport);
 }
 
 /* ---------------- периодическое обновление ---------------- */
@@ -3623,8 +4073,11 @@ state.an = {
   data: null,
   auto: null,
   autoBusy: false,
-  filter: { kind: 'all', target: '', min_group: 3, min_lift: 20, sport: '', sports: [] },
+  filter: analyzerFilterDefaults(),
   expanded: { failure: false, success: false },
+  revision: '',
+  lastRefreshAt: 0,
+  busy: false,
 };
 
 const AN_VISIBLE = 5;
@@ -3836,16 +4289,23 @@ function bindAutoRules() {
 }
 
 function refreshAnalyzer(keepExpanded) {
-  if (!bridge) return;
-  const data = call('analyzer', JSON.stringify(state.an.filter));
-  if (!data) return;
-  state.an.data = data;
-  if (!keepExpanded) {
-    state.an.expanded.failure = false;
-    state.an.expanded.success = false;
+  if (!bridge || !state.an || state.an.busy) return;
+  state.an.busy = true;
+  state.an.lastRefreshAt = Date.now();
+  try {
+    const data = call('analyzer', JSON.stringify(state.an.filter));
+    if (!data) return;
+    state.an.data = data;
+    if (data.revision) state.an.revision = String(data.revision);
+    if (!keepExpanded) {
+      state.an.expanded.failure = false;
+      state.an.expanded.success = false;
+    }
+    renderAnalyzer();
+    loadAutoStatus();
+  } finally {
+    state.an.busy = false;
   }
-  renderAnalyzer();
-  loadAutoStatus();
 }
 
 function analyzerRowHTML(row, group, index) {
@@ -3870,17 +4330,18 @@ function analyzerRowHTML(row, group, index) {
   const extra = (row.examples || []).length > 2
     ? ' <span class="an-share-note">ещё ' + ((row.examples || []).length - 2) + '</span>'
     : '';
+  const sportTag = row.sport ? sportBadge(row.sport) : '';
   return `<div class="an-row">
     <div class="an-row-head">
       <div class="an-title">${esc(row.text)}</div>
       <div class="an-share ${fail ? 'bad' : 'ok'}">${fmtShare(share)}</div>
     </div>
     <div class="an-bar"><span class="${fail ? 'bad' : 'ok'}" style="width:${width}%"></span></div>
-    <div class="an-meta">${fail ? 'неудачи' : 'удачи'} ${hits} из ${total} · ${fail ? 'удачи' : 'неудачи'} ${fmtShare(other)} · разница ${num(Math.abs(row.lift))} п.п. · покрытие ${num(row.coverage)}%</div>
+    <div class="an-meta">${sportTag ? sportTag + ' · ' : ''}${fail ? 'неудачи' : 'удачи'} ${hits} из ${total} · ${fail ? 'удачи' : 'неудачи'} ${fmtShare(other)} · разница ${num(Math.abs(row.lift))} п.п. · покрытие ${num(row.coverage)}%</div>
     ${examples ? `<div class="an-ex">${examples}${extra}</div>` : ''}
     ${fail ? '<div class="an-reco">Чтобы не ловить такие матчи, добавьте обратное условие в правило.</div>' : ''}
     <div class="an-actions">
-      <button class="btn btn-ghost btn-sm" data-an-add="${group}" data-an-index="${index}">${fail ? 'Исключить в правиле' : 'Как в удачах'}</button>
+      <button class="btn btn-ghost btn-sm" data-an-add="${group}" data-an-index="${index}" data-an-sport="${esc(row.sport || '')}">${fail ? 'Исключить в правиле' : 'Как в удачах'}</button>
     </div>
   </div>`;
 }
@@ -3891,10 +4352,10 @@ function renderAnLimits(rows) {
   $('anLimitCount').textContent = top.length;
   $('anLimits').innerHTML = top.map((row, index) =>
     `<div class="an-limit">
-      <div class="an-limit-text">${esc(row.text)}</div>
+      <div class="an-limit-text">${row.sport ? sportBadge(row.sport) + ' ' : ''}${esc(row.text)}</div>
       <div class="an-limit-meta">встречалось при неудачах в ${fmtShare(row.loss_share)}
         случаев · разница ${num(Math.abs(row.lift))} п.п.</div>
-      <button class="btn btn-ghost btn-sm" data-an-add="failure" data-an-index="${index}">Исключить в правиле</button>
+      <button class="btn btn-ghost btn-sm" data-an-add="failure" data-an-index="${index}" data-an-sport="${esc(row.sport || '')}">Исключить в правиле</button>
     </div>`).join('');
 }
 
@@ -3938,9 +4399,9 @@ function renderAnCombos(combos) {
           <div class="an-share ${tone}">${fmtShare(share)}</div>
         </div>
         <div class="an-bar"><span class="${tone}" style="width:${Math.min(100, Math.max(3, num(share)))}%"></span></div>
-        <div class="an-meta">${group === 'failure' ? 'неудачи' : 'удачи'} ${hits} из ${total} · разница ${num(Math.abs(combo.lift))} п.п.</div>
+        <div class="an-meta">${combo.sport ? sportBadge(combo.sport) + ' · ' : ''}${group === 'failure' ? 'неудачи' : 'удачи'} ${hits} из ${total} · разница ${num(Math.abs(combo.lift))} п.п.</div>
         <div class="an-actions">
-          <button class="btn btn-ghost btn-sm" data-an-combo="${group}" data-an-index="${i}">В конструктор</button>
+          <button class="btn btn-ghost btn-sm" data-an-combo="${group}" data-an-index="${i}" data-an-sport="${esc(combo.sport || '')}">В конструктор</button>
         </div>
       </div>`);
     });
@@ -4092,8 +4553,7 @@ function renderAdvisor(info) {
     const parts = [];
     if (data.hint) parts.push(data.hint);
     if (resolved.length) {
-      parts.push('Закрыто автоматически: ' + resolved.length +
-        ' (условие уже есть в правиле).');
+      parts.push('Закрыто автоматически: ' + resolved.length + '.');
     }
     hint.textContent = parts.join(' ');
     hint.className = 'auto-hint' + (recommendations.length ? ' warn' : '');
@@ -4398,7 +4858,7 @@ function analyzerRow(group, index) {
   return rows[index] || null;
 }
 
-function analyzerToConstructor(conditions, invert, name, texts) {
+function analyzerToConstructor(conditions, invert, name, texts, sport) {
   if (!Array.isArray(conditions) || !conditions.length) return;
   const prepared = JSON.parse(JSON.stringify(conditions)).map(cond => {
     if (invert) {
@@ -4407,20 +4867,25 @@ function analyzerToConstructor(conditions, invert, name, texts) {
     }
     return cond;
   });
-  const sport = (((state.an.data || {}).options || {}).sport) || state.sport;
+  // Вид берём из конкретной находки. В мультивыборном анализе это
+  // критично: условие должно попасть в правило того же вида, а не в
+  // правило активного вида.
+  const targetSport = sport
+    || (((state.an.data || {}).options || {}).sport)
+    || state.sport;
   state.attach = {
     conditions: prepared,
     invert: !!invert,
     name: name || '',
     texts: (Array.isArray(texts) && texts.length) ? texts : [name || 'Условие анализатора'],
-    sport: sport,
+    sport: targetSport,
     rules: [],
     loading: true,
     error: '',
   };
   $('attachBody').innerHTML = '';
   $('attachModal').classList.remove('hidden');
-  loadAttachRules(sport);
+  loadAttachRules(targetSport);
 }
 
 /* ================= ДОБАВЛЕНИЕ УСЛОВИЯ В ПРАВИЛО ================= */
@@ -5138,6 +5603,7 @@ function init() {
   buildRequiredModels();
   buildAllowedBets();
   buildAllowedSets();
+  state.an.filter = loadAnalyzerFilter();
   renderSportSelectors();
   updateAnalyzerSportUI();
   bind();
@@ -5149,6 +5615,7 @@ function init() {
 
   refreshDashboard();
   loadSettings();
+  initUpdates();
   startPolling();
 }
 

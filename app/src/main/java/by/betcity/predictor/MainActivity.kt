@@ -24,6 +24,7 @@ import java.io.File
 class MainActivity : Activity() {
 
     private lateinit var webView: WebView
+    private lateinit var updateManager: UpdateManager
     private var pendingSaveName: String? = null
     private var pendingSaveContent: String? = null
 
@@ -80,6 +81,7 @@ class MainActivity : Activity() {
             loadUrl("file:///android_asset/www/index.html")
         }
         setContentView(webView)
+        updateManager = UpdateManager(this, webView)
         requestNotificationPermission()
 
         // Прогрев Python: импорт движка занимает время, лучше сделать это
@@ -330,6 +332,22 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun platform(): String = "android-${Build.VERSION.SDK_INT}"
+
+        // ---------------- обновления APK ----------------
+        @JavascriptInterface
+        fun updateInfo(): String = updateManager.info()
+
+        @JavascriptInterface
+        fun updateCheck(url: String, token: String, manual: Boolean): String =
+            updateManager.check(url, token, manual)
+
+        @JavascriptInterface
+        fun updateDownload(url: String, sha256: String, version: String,
+                           token: String): String =
+            updateManager.download(url, sha256, version, token)
+
+        @JavascriptInterface
+        fun updateInstall(path: String): String = updateManager.install(path)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

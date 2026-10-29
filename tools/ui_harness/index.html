@@ -866,6 +866,28 @@
         <div class="auto-hint" id="setOnlineHint"></div>
       </div>
 
+      <div class="card" id="cardUpdates">
+        <div class="card-head"><h3>Обновления приложения</h3><span class="badge" id="setUpdateBadge">—</span></div>
+        <div class="field-row">
+          <div><div class="field-title">Проверять обновления при запуске</div>
+            <div class="field-hint">Если на сайте опубликована новая версия APK,
+              приложение предложит скачать и установить её</div></div>
+          <label class="switch"><input type="checkbox" id="setUpdateEnabled"><span></span></label>
+        </div>
+        <div class="field">
+          <label>Адрес манифеста обновлений</label>
+          <input type="text" id="setUpdateUrl" placeholder="https://predictor.alwaysdata.net/api/v1/update" autocomplete="off">
+          <div class="field-hint">Пусто — адрес берётся из онлайн-сайта
+            (онлайн-режим → адрес сайта + <code>/api/v1/update</code>).</div>
+        </div>
+        <div class="auto-actions">
+          <button class="btn btn-primary btn-sm" id="btnUpdateCheck">Проверить сейчас</button>
+          <button class="btn btn-ghost btn-sm hidden" id="btnUpdateInstall">Скачать и установить</button>
+        </div>
+        <div class="update-progress hidden" id="setUpdateProgress"><span></span></div>
+        <div class="auto-hint" id="setUpdateHint">Текущая версия: <span id="setUpdateCurrent">—</span></div>
+      </div>
+
       <div class="card">
         <div class="card-head"><h3>Telegram</h3><span class="muted">необязательно</span></div>
         <div class="field-row">
@@ -1152,12 +1174,26 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="updateModal">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3>Доступно обновление</h3>
+        <button class="icon-btn" id="btnCloseUpdate" title="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="updateBody"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" id="btnUpdateLater">Позже</button>
+        <button class="btn btn-primary btn-sm" id="btnUpdateNow">Скачать и установить</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
   <div id="loader" class="loader hidden"><div class="spinner"></div></div>
 </div>
 
 <script src="docs.js"></script>
-<script src="mock.js?v=1793249410"></script>
+<script src="mock.js?v=1793256229"></script>
 <script src="app.js"></script>
 </body>
 </html>
