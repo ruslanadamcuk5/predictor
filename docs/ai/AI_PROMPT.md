@@ -58,7 +58,7 @@ C:\Users\adamrv\Documents\deepseek-harness\default-workspace\betcity-predictor-a
 - APK собирается так:
   `$env:ANDROID_HOME="C:\Android"; C:\Android\gradle-8.7\bin\gradle.bat --no-daemon assembleDebug`.
 
-Текущее состояние: версия 1.15 (`versionCode 16`, `APP_VERSION 1.15.0`),
+Текущее состояние: версия 1.16 (`versionCode 17`, `APP_VERSION 1.16.0`),
 шесть видов спорта, 100 шаблонов, анализатор, авто-формирование правил,
 встроенная документация, привязка условия к существующему правилу и
 aвтообновление APK с сайта.

@@ -416,7 +416,7 @@ def prefixed_request(method, path):
         "QUERY_STRING": "",
         "SERVER_NAME": "test",
         "SERVER_PORT": "80",
-        "HTTP_HOST": "virusadk.alwaysdata.net",
+        "HTTP_HOST": "predictor.alwaysdata.net",
         "HTTP_AUTHORIZATION": "Bearer test-token",
         "wsgi.url_scheme": "https",
         "wsgi.input": io.BytesIO(b""),
@@ -481,7 +481,7 @@ def lazy_request(app, method, path, headers=None):
         "QUERY_STRING": "",
         "SERVER_NAME": "test",
         "SERVER_PORT": "80",
-        "HTTP_HOST": "virusadk.alwaysdata.net",
+        "HTTP_HOST": "predictor.alwaysdata.net",
         "HTTP_AUTHORIZATION": "Bearer test-token",
         "wsgi.url_scheme": "https",
         "wsgi.input": io.BytesIO(b""),
@@ -523,5 +523,19 @@ check("ленивая обёртка: ошибка импорта даёт 503, 
       status["status"] == 503 and "недоступен" in body.decode("utf-8"),
       (status, body[:120]))
 check("ленивая обёртка: ошибка запоминается", bool(broken._error))
+
+# =====================================================================
+# Клиент онлайн-режима: устаревший адрес не должен оставаться в настройках.
+sys.path.insert(0, os.path.join(ROOT, "app", "src", "main", "python"))
+import online_client  # noqa: E402
+
+cfg = online_client.config({
+    "online": {"base_url": "https://virusadk.alwaysdata.net/predictor"}})
+check("клиент: старый адрес заменён на новый",
+      cfg["base_url"] == "https://predictor.alwaysdata.net", cfg["base_url"])
+cfg = online_client.config({
+    "online": {"base_url": "https://example.com/predictor"}})
+check("клиент: свой адрес сохранён",
+      cfg["base_url"] == "https://example.com/predictor", cfg["base_url"])
 
 print("OK — пройдено проверок: %d" % len(PASSED))

@@ -87,6 +87,64 @@ check("строка записана", len(rows) == 1, str(len(rows)))
 print("=== 6. Разбор счёта ===")
 check("парсинг счёта", len(bot and core.ResultChecker(bot, logger).parse_score("11:7, 9:11, 11:5")) == 3)
 
+print("=== 7. Миграция онлайн-адреса ===")
+legacy_path = os.path.join(HOME, "legacy_settings.json")
+with open(legacy_path, "w", encoding="utf-8") as handle:
+    json.dump({
+        "online": {"base_url": "https://virusadk.alwaysdata.net/predictor",
+                   "enabled": True},
+        "updates": {"manifest_url":
+                    "https://virusadk.alwaysdata.net/predictor/api/v1/update"},
+        "poll_interval_sec": 33,
+    }, handle)
+legacy = core.BotSettings(legacy_path)
+check("старый адрес заменён",
+      legacy.data["online"]["base_url"] == "https://predictor.alwaysdata.net",
+      legacy.data["online"]["base_url"])
+check("старый манифест очищен",
+      legacy.data["updates"]["manifest_url"] == "",
+      legacy.data["updates"]["manifest_url"])
+check("остальные настройки сохранены",
+      legacy.data["poll_interval_sec"] == 33
+      and legacy.data["online"]["enabled"] is True)
+custom_path = os.path.join(HOME, "custom_settings.json")
+with open(custom_path, "w", encoding="utf-8") as handle:
+    json.dump({"online": {"base_url": "https://example.com/predictor"}}, handle)
+custom = core.BotSettings(custom_path)
+check("свой адрес не перезаписан",
+      custom.data["online"]["base_url"] == "https://example.com/predictor",
+      custom.data["online"]["base_url"])
+
+print("=== 8. Согласованность версии и адресов ===")
+import re
+
+def read(rel):
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+        return handle.read()
+
+js_url = re.search(r"DEFAULT_ONLINE_URL = '([^']+)'", read("app/src/main/assets/www/app.js")).group(1)
+core_url = core.BotSettings.DEFAULTS["online"]["base_url"]
+client_url = re.search(r'DEFAULT_BASE_URL = "([^"]+)"',
+                       read("app/src/main/python/online_client.py")).group(1)
+live_url = re.search(r'DEFAULT_BASE = "([^"]+)"',
+                     read("tools/check_live.py")).group(1)
+check("адрес онлайн-режима совпадает во всех местах",
+      len({js_url, core_url, client_url, live_url}) == 1,
+      (js_url, core_url, client_url, live_url))
+check("адрес не ведёт на запрещённый сайт",
+      "virusadk.alwaysdata.net" not in js_url, js_url)
+
+gradle = read("app/build.gradle.kts")
+code = int(re.search(r"versionCode = (\d+)", gradle).group(1))
+name = re.search(r'versionName = "([^"]+)"', gradle).group(1)
+api = read("app/src/main/python/engine_api.py")
+server = read("server/online_app.py")
+check("versionCode — целое и растёт", code >= 17, code)
+check("versionName совпадает с APP_VERSION",
+      re.search(r'APP_VERSION = "([^"]+)"', api).group(1) == name + ".0", name)
+check("SERVER_VERSION совпадает с APP_VERSION",
+      re.search(r'SERVER_VERSION = "([^"]+)"', server).group(1) == name + ".0", name)
+
 print()
 if fails:
     print("ПРОВАЛЕНО: %d -> %s" % (len(fails), ", ".join(fails)))

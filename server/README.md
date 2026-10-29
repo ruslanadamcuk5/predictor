@@ -54,60 +54,58 @@ python/
   sports.py
 releases/
   update.json
-  predictor-1.15.apk
+  predictor-1.16.apk
 ```
 
 Если релизы ещё не опубликованы, `releases/` будет пустым, а
 `/api/v1/update` вернёт `published: false`.
 
-## alwaysdata.com: пошагово
+## alwaysdata.com: отдельный сайт
 
-Бесплатный тариф alwaysdata разрешает сайты только на адресе аккаунта
-(`<логин>.alwaysdata.net`), поэтому сервис удобно повесить на подкаталог
-рядом с другим сайтом:
+Целевой адрес — `https://predictor.alwaysdata.net`.
 
-```
-https://<логин>.alwaysdata.net/predictor
-```
+Важное ограничение alwaysdata: на бесплатном тарифе сайт создаётся только
+на адресе аккаунта `<логин>.alwaysdata.net`, а произвольные адреса
+`*.alwaysdata.net` нельзя выбрать и на платном тарифе — они принадлежат
+аккаунтам с соответствующим логином. Поэтому `predictor.alwaysdata.net`
+появится только у аккаунта с логином `predictor` либо на собственном домене.
+Пока такого адреса нет, укажите в приложении фактический URL сайта.
 
-Каталог `predictor` уже содержит всё необходимое. В панели:
+Когда адрес создан в панели, сайт настраивается в корне:
 
 1. **Web → Sites → Add a site**.
 2. Тип сайта — **Python WSGI**.
-3. **Addresses**: `<логин>.alwaysdata.net/predictor` (именно с путём).
-4. **Path**: `predictor`.
-5. **Working directory**: `/home/<логин>/predictor`.
-6. **Python version**: 3.13.
-7. **Virtualenv**: `/home/<логин>/.virtualenvs/predictor`.
-8. **WSGI file**: `/home/<логин>/predictor/app.wsgi`.
-9. Включите **path_trim** (обрезать путь) и **Force HTTPS**.
-10. Сохраните сайт и откройте
-    `https://<логин>.alwaysdata.net/predictor/` — должна появиться страница
-    состояния.
-
-Переменные окружения задавать не обязательно: `app.wsgi` читает файл
-`.env` рядом с собой. В нём уже лежат:
+3. **Addresses**: `predictor.alwaysdata.net` (без пути).
+4. **Working directory**: `/home/<логин>/predictor`.
+5. **Python version**: 3.13.
+6. **Virtualenv**: `/home/<логин>/.virtualenvs/predictor`.
+7. **WSGI file**: `/home/<логин>/predictor/app.wsgi`.
+8. Включите **Force HTTPS**.
+9. Проверьте `.env` рядом с `app.wsgi`:
 
 ```ini
-PREDICTOR_TOKEN=<длинная случайная строка>
+PREDICTOR_TOKEN=
 PREDICTOR_RELEASES_DIR=/home/<логин>/predictor/releases
-PREDICTOR_BASE_PATH=/predictor
+PREDICTOR_BASE_PATH=
 ```
 
-`PREDICTOR_BASE_PATH` нужен, чтобы ссылки в манифесте обновления были
-публичными (`/predictor/releases/...`), даже когда WSGI видит уже обрезанный
-путь. Если сайт создан в корне отдельного домена, уберите эту переменную.
+`PREDICTOR_BASE_PATH` пустой, потому что сервис стоит в корне сайта. Токен
+пуст — приложение работает без ручной настройки. Если нужен доступ по токену,
+задайте его здесь и впишите тот же токен в настройках приложения.
 
-Если позже появится отдельный домен или аккаунт с адресом без пути, создайте
-обычный сайт **Python WSGI** с Working directory `/home/<логин>/predictor`,
-WSGI file `/home/<логин>/predictor/app.wsgi` и пустым `PREDICTOR_BASE_PATH`.
-Код поддерживает оба варианта.
+10. Откройте `https://predictor.alwaysdata.net/` — должна появиться страница
+    состояния, а `/api/v1/ping` — вернуть JSON.
 
-### Если отдельный сайт создать нельзя
+### Если нужного адреса нет
 
-Если на бесплатном тарифе уже занят единственный адрес аккаунта. Тогда
-сервис можно смонтировать в подкаталог `/predictor` существующего
-WSGI-приложения (например, Flask) через `DispatcherMiddleware`:
+- Укажите в приложении фактический адрес сайта: «Настройки» → «Онлайн-режим».
+  Адрес хранится в настройках и не требует пересборки APK.
+- Используйте собственный домен на платном тарифе.
+- Разверните сервис в подкаталоге сайта, который вы готовы менять. Не
+  монтируйте его в чужой или рабочий сайт без явного согласия: обновление
+  основного приложения может перезаписать WSGI-файл.
+
+Монтаж в подкаталог (крайний случай) через `DispatcherMiddleware`:
 
 ```python
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
@@ -121,23 +119,39 @@ application = DispatcherMiddleware(
 )
 ```
 
-`online_app.py` сам учитывает `SCRIPT_NAME` и `PREDICTOR_BASE_PATH`, поэтому
-ссылки в манифесте обновления и раздача APK работают и в подкаталоге. Если
-импорт сервиса упадёт, оберните его в `try/except`, чтобы основной сайт
-продолжал работать.
-
-Отдельный сайт всё равно предпочтительнее: при обновлении основного
-приложения его WSGI-файл может быть перезаписан.
+В этом случае задайте `PREDICTOR_BASE_PATH=/predictor` и включите
+**path_trim** в настройках сайта. `online_app.py` учитывает и `SCRIPT_NAME`,
+поэтому ссылки на APK и манифест остаются рабочими.
 
 Если alwaysdata показывает ошибку 500, откройте **Web → Sites → ваш сайт →
 Logs** и проверьте traceback. Чаще всего причина — неверный путь к `app.wsgi`
 или каталогу `python/`.
 
+## Локальная проверка без сайта
+
+Публичный сайт для проверки не обязателен. Из корня проекта:
+
+```bash
+python tools/serve_online.py
+```
+
+Скрипт напечатает адрес компьютера в локальной сети, например
+`http://192.168.1.10:8099`. В приложении укажите его в «Настройки» →
+«Онлайн-режим» (без `/api`). Телефон и компьютер должны быть в одной Wi-Fi
+сети. Приложение разрешает HTTP для таких проверок; для постоянной работы
+используйте HTTPS-сайт.
+
+Проверка сервиса без телефона:
+
+```bash
+python tools/check_live.py --base http://127.0.0.1:8099
+```
+
 ## Подключение в приложении
 
 1. «Настройки» → «Онлайн-режим».
-2. Адрес сайта: `https://LOGIN.alwaysdata.net` (без `/api`).
-3. Токен доступа: тот же `PREDICTOR_TOKEN`.
+2. Адрес сайта: `https://predictor.alwaysdata.net` (без `/api`).
+3. Токен доступа: тот же `PREDICTOR_TOKEN` (если он пуст — оставьте поле пустым).
 4. «Проверить подключение» → должно появиться «Сайт отвечает».
 5. На экране «Анализ» нажмите «Использовать онлайн».
 
@@ -147,7 +161,7 @@ Logs** и проверьте traceback. Чаще всего причина — �
 ## Проверка запроса вручную
 
 ```bash
-curl -X POST https://LOGIN.alwaysdata.net/api/v1/analyze \
+curl -X POST https://predictor.alwaysdata.net/api/v1/analyze \
   -H "Authorization: Bearer TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"sports":["table_tennis"],"predictions":{},"rules":{}}'

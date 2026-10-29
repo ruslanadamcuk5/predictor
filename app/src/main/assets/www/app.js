@@ -1356,7 +1356,8 @@ function bindAi() {
 
 /* ---------------- обновления APK ---------------- */
 
-const DEFAULT_ONLINE_URL = 'https://virusadk.alwaysdata.net/predictor';
+const DEFAULT_ONLINE_URL = 'https://predictor.alwaysdata.net';
+const LEGACY_ONLINE_PREFIX = 'https://virusadk.alwaysdata.net';
 const UPDATE_SKIP_KEY = 'predictor.update.skip';
 
 function updateCfg() {
@@ -1367,12 +1368,15 @@ function updateCfg() {
 function onlineBaseUrl() {
   const base = String(((state.settings || {}).online || {}).base_url || '')
     .trim().replace(/\/+$/, '');
-  return base || DEFAULT_ONLINE_URL;
+  // Старый адрес из настроек 1.15 больше не используется.
+  if (!base || base.indexOf(LEGACY_ONLINE_PREFIX) === 0) return DEFAULT_ONLINE_URL;
+  return base;
 }
 
 function updateManifestUrl() {
   const cfg = updateCfg();
-  const explicit = String(cfg.manifest_url || '').trim();
+  let explicit = String(cfg.manifest_url || '').trim();
+  if (explicit.indexOf(LEGACY_ONLINE_PREFIX) === 0) explicit = '';
   if (explicit) return explicit;
   return onlineBaseUrl() + '/api/v1/update';
 }
@@ -2441,7 +2445,7 @@ function renderSettings(s) {
 
   const online = s.online || {};
   if ($('setOnlineEnabled')) $('setOnlineEnabled').checked = !!online.enabled;
-  if ($('setOnlineUrl')) $('setOnlineUrl').value = online.base_url || DEFAULT_ONLINE_URL;
+  if ($('setOnlineUrl')) $('setOnlineUrl').value = onlineBaseUrl();
   if ($('setOnlineToken')) $('setOnlineToken').value = online.token || '';
   if ($('setOnlineTimeout')) {
     $('setOnlineTimeout').value = String(num(online.timeout) || 25);

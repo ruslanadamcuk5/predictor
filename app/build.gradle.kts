@@ -12,8 +12,8 @@ android {
         applicationId = "by.betcity.predictor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.15"
+        versionCode = 17
+        versionName = "1.16"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }

@@ -19,7 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_BASE = "https://virusadk.alwaysdata.net/predictor"
+DEFAULT_BASE = "https://predictor.alwaysdata.net"
 
 
 def request(url, method="GET", headers=None, timeout=30):

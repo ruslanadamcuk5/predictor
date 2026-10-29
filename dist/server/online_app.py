@@ -20,7 +20,7 @@ import traceback
 from datetime import datetime
 from email.utils import formatdate
 
-SERVER_VERSION = "1.15.0"
+SERVER_VERSION = "1.16.0"
 MAX_BODY = 12 * 1024 * 1024
 MAX_PREDICTIONS = 8000
 CHUNK_SIZE = 256 * 1024
@@ -207,7 +207,7 @@ def _script_prefix(environ):
 
 def _base_url(environ):
     scheme = str(environ.get("wsgi.url_scheme") or "https")
-    host = str(environ.get("HTTP_HOST") or "virusadk.alwaysdata.net")
+    host = str(environ.get("HTTP_HOST") or "predictor.alwaysdata.net")
     return "%s://%s%s" % (scheme, host, _script_prefix(environ))
 
 

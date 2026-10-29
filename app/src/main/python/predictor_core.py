@@ -423,7 +423,7 @@ class BotSettings:
         # расчёт, если включён fallback_local.
         "online": {
             "enabled": False,
-            "base_url": "https://virusadk.alwaysdata.net/predictor",
+            "base_url": "https://predictor.alwaysdata.net",
             "token": "",
             "timeout": 25,
             "fallback_local": True,
@@ -464,6 +464,11 @@ class BotSettings:
         },
     }
 
+    # Адреса онлайн-сервиса из версии 1.15. При загрузке настроек они
+    # заменяются на актуальный адрес, иначе приложение ходило бы на сайт,
+    # который больше не обслуживается.
+    LEGACY_ONLINE_PREFIX = "https://virusadk.alwaysdata.net"
+
     NESTED = ("model_thresholds", "allowed_bets", "allowed_sets",
               "general_filters", "telegram", "reports", "notifications",
               "engine", "auto_rules", "neural", "online", "updates")
@@ -496,7 +501,21 @@ class BotSettings:
                             data[key] = stored[key]
         except Exception as exc:
             logger.error("Не удалось загрузить настройки: %s", exc)
+        self._migrate(data)
         return data
+
+    def _migrate(self, data):
+        """Убирает устаревшие адреса, сохраняя остальные настройки."""
+        online = data.get("online")
+        if isinstance(online, dict):
+            base = str(online.get("base_url") or "").strip()
+            if base.startswith(self.LEGACY_ONLINE_PREFIX):
+                online["base_url"] = self.DEFAULTS["online"]["base_url"]
+        updates = data.get("updates")
+        if isinstance(updates, dict):
+            manifest = str(updates.get("manifest_url") or "").strip()
+            if manifest.startswith(self.LEGACY_ONLINE_PREFIX):
+                updates["manifest_url"] = ""
 
     def save(self):
         with self._lock:
