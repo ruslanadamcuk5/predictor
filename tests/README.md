@@ -45,6 +45,9 @@ PowerShell может показать `RequestsDependencyWarning` и завер
 | `test_sports_pipeline.py` | парсер, конструктор, анализатор по 6 видам | `OK — проверок: 255` |
 | `test_sports_metrics.py` | вычисление всех метрик по видам | `OK — вычислено метрик: 403` |
 | `check_sports_presets.py` | валидация 100 шаблонов | `errors: 0` |
+| `test_recommendations.py` | мультивыбор видов и жизненный цикл рекомендаций | `OK — пройдено проверок: 36` |
+| `test_release_tool.py` | публикация APK и манифеста обновления | `OK — пройдено проверок: 20` |
+| `test_online_server.py` | ping, манифест, APK/Range, подкаталог, ленивая обёртка | `OK — пройдено проверок: 65` |
 
 ### Сеть
 

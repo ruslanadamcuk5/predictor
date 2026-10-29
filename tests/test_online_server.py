@@ -466,4 +466,62 @@ try:
 finally:
     online_app.BASE_PATH = saved_base
 
+# =====================================================================
+# Ленивая WSGI-обёртка: сервис в подкаталоге чужого сайта.
+from lazy_app import LazyApplication  # noqa: E402
+
+lazy = LazyApplication(os.path.join(ROOT, "server", "app.wsgi"))
+check("ленивая обёртка: до запроса приложение не загружено", lazy._app is None)
+
+
+def lazy_request(app, method, path, headers=None):
+    environ = {
+        "REQUEST_METHOD": method,
+        "PATH_INFO": path,
+        "QUERY_STRING": "",
+        "SERVER_NAME": "test",
+        "SERVER_PORT": "80",
+        "HTTP_HOST": "virusadk.alwaysdata.net",
+        "HTTP_AUTHORIZATION": "Bearer test-token",
+        "wsgi.url_scheme": "https",
+        "wsgi.input": io.BytesIO(b""),
+        "CONTENT_LENGTH": "0",
+    }
+    environ.update(headers or {})
+    captured = {}
+
+    def start_response(status, response_headers):
+        captured["status"] = int(status.split()[0])
+        captured["headers"] = dict(response_headers)
+
+    body = b"".join(app(environ, start_response))
+    return captured, body
+
+
+status, body = lazy_request(lazy, "GET", "/api/v1/ping")
+check("ленивая обёртка: ping",
+      status["status"] == 200 and json.loads(body.decode("utf-8")).get("ok") is True,
+      (status, body[:120]))
+check("ленивая обёртка: приложение загрузилось при первом запросе",
+      lazy._app is not None)
+
+status, body = lazy_request(lazy, "GET", "/api/v1/update")
+check("ленивая обёртка: манифест обновления",
+      status["status"] == 200
+      and json.loads(body.decode("utf-8")).get("published") is True,
+      (status, body[:120]))
+
+status, body = lazy_request(lazy, "GET", "/releases/" + APK_NAME,
+                            {"HTTP_RANGE": "bytes=0-15"})
+check("ленивая обёртка: APK и Range",
+      status["status"] == 206 and len(body) == 16,
+      (status, len(body)))
+
+broken = LazyApplication(os.path.join(ROOT, "server", "нет-такого.wsgi"))
+status, body = lazy_request(broken, "GET", "/api/v1/ping")
+check("ленивая обёртка: ошибка импорта даёт 503, а не падение",
+      status["status"] == 503 and "недоступен" in body.decode("utf-8"),
+      (status, body[:120]))
+check("ленивая обёртка: ошибка запоминается", bool(broken._error))
+
 print("OK — пройдено проверок: %d" % len(PASSED))

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import threading
 import traceback
@@ -27,7 +28,13 @@ class LazyApplication(object):
 
     def _load(self):
         try:
-            module = SourceFileLoader(self.name, self.path).load_module()
+            loader = SourceFileLoader(self.name, self.path)
+            spec = importlib.util.spec_from_loader(self.name, loader)
+            if spec is None or spec.loader is None:
+                raise RuntimeError("не удалось загрузить %s" % self.path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[self.name] = module
+            spec.loader.exec_module(module)
             app = getattr(module, "application", None)
             if app is None:
                 raise RuntimeError("в %s нет application" % self.path)
