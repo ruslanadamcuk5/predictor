@@ -7,6 +7,7 @@
 Результат: dist/server/
     app.wsgi          — точка входа WSGI
     online_app.py     — само приложение
+    cgi_adapter.py    — точка входа для сайта PHP/static (CGI)
     python/           — модули анализатора и конструктора
     releases/         — APK и манифест update.json (если опубликованы)
     README.md         — памятка по настройке сайта
@@ -38,7 +39,8 @@ def main():
         shutil.rmtree(DEST)
     os.makedirs(os.path.join(DEST, "python"))
 
-    for name in ("app.wsgi", "online_app.py", "lazy_app.py", "README.md"):
+    for name in ("app.wsgi", "online_app.py", "lazy_app.py", "cgi_adapter.py",
+                 "README.md"):
         shutil.copyfile(os.path.join(SOURCE_SERVER, name),
                         os.path.join(DEST, name))
     for name in MODULES:
@@ -60,6 +62,7 @@ def main():
     print("Готово:", DEST)
     print("Загрузите содержимое dist/server в каталог сайта alwaysdata.")
     print("Точка входа WSGI: app.wsgi")
+    print("Точка входа CGI:  cgi_adapter.py (для сайта PHP/static)")
     if copied:
         print("Релизов скопировано: %d (GET /api/v1/update)" % copied)
     else:

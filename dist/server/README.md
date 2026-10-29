@@ -62,16 +62,80 @@ releases/
 
 ## alwaysdata.com: отдельный сайт
 
-Целевой адрес — `https://predictor.alwaysdata.net`.
+Целевой адрес — `https://predictor.alwaysdata.net` (аккаунт с логином
+`predictor`, сайт в корне домена).
 
-Важное ограничение alwaysdata: на бесплатном тарифе сайт создаётся только
-на адресе аккаунта `<логин>.alwaysdata.net`, а произвольные адреса
-`*.alwaysdata.net` нельзя выбрать и на платном тарифе — они принадлежат
-аккаунтам с соответствующим логином. Поэтому `predictor.alwaysdata.net`
-появится только у аккаунта с логином `predictor` либо на собственном домене.
-Пока такого адреса нет, укажите в приложении фактический URL сайта.
+На аккаунте доступны два способа запуска. Сейчас используется **CGI на
+статическом сайте**: он не требует панели, virtualenv и pip-пакетов.
 
-Когда адрес создан в панели, сайт настраивается в корне:
+### Вариант A. Сайт PHP/static + CGI (рабочая схема)
+
+Сайт создаётся в панели как **PHP** или **Static** с DocumentRoot
+`/home/<логин>/www`. Запросы `/api/*` выполняет CGI-скрипт, который вызывает
+тот же `online_app.application`.
+
+Раскладка файлов:
+
+```
+/home/<логин>/predictor/            серверный бандл: online_app.py, python/
+/home/<логин>/predictor/.env        настройки
+/home/<логин>/www/.htaccess         правило rewrite на CGI
+/home/<логин>/www/cgi/predictor.py  CGI-адаптер (chmod 755)
+/home/<логин>/www/index.html        страница состояния
+/home/<логин>/www/releases/         APK и update.json (раздаёт Apache)
+```
+
+Загрузка из корня проекта:
+
+```bash
+python tools/prepare_server.py
+scp -r dist/server/* predictor@ssh-predictor.alwaysdata.net:/home/predictor/predictor/
+scp dist/server/cgi_adapter.py predictor@ssh-predictor.alwaysdata.net:/home/predictor/www/cgi/predictor.py
+scp releases/* predictor@ssh-predictor.alwaysdata.net:/home/predictor/www/releases/
+```
+
+На сервере:
+
+```bash
+chmod 755 /home/predictor/www/cgi/predictor.py
+```
+
+`/home/<логин>/predictor/.env`:
+
+```ini
+PREDICTOR_TOKEN=
+PREDICTOR_RELEASES_DIR=/home/<логин>/www/releases
+PREDICTOR_BASE_PATH=
+```
+
+`/home/<логин>/www/.htaccess`:
+
+```apache
+Options +ExecCGI
+AddHandler cgi-script .py
+
+RewriteEngine On
+RewriteRule ^api(/.*)?$ /cgi/predictor.py [L,QSA]
+```
+
+APK и `update.json` лежат в `www/releases/` и отдаются Apache статически:
+это быстрее CGI и уже поддерживает `Range`. `PREDICTOR_RELEASES_DIR`
+указывает на тот же каталог, чтобы манифест брал реальный размер и SHA-256.
+
+Проверка:
+
+```bash
+python tools/check_live.py --base https://predictor.alwaysdata.net
+```
+
+CGI-процесс запускается под пользователем сайта, поэтому каталоги
+`/home/<логин>/predictor` и `www/cgi` не должны быть доступны другим
+пользователям. Файл `.env` держите с правами `600`.
+
+### Вариант B. Штатный Python WSGI
+
+Если панель доступна и сайт можно создать как **Python WSGI**, запросы
+обрабатывает `app.wsgi` напрямую, без CGI:
 
 1. **Web → Sites → Add a site**.
 2. Тип сайта — **Python WSGI**.
@@ -124,8 +188,9 @@ application = DispatcherMiddleware(
 поэтому ссылки на APK и манифест остаются рабочими.
 
 Если alwaysdata показывает ошибку 500, откройте **Web → Sites → ваш сайт →
-Logs** и проверьте traceback. Чаще всего причина — неверный путь к `app.wsgi`
-или каталогу `python/`.
+Logs**. Для CGI traceback также попадает в `admin/logs/apache/apache.log`.
+Чаще всего причина — неверный путь к `online_app.py`, каталогу `python/`
+или отсутствующий `PREDICTOR_ROOT` в адаптере.
 
 ## Локальная проверка без сайта
 

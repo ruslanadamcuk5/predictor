@@ -54,8 +54,8 @@ python tests\test_online_server.py
 python tools/check_live.py --base https://predictor.alwaysdata.net
 ```
 
-Если публичного сайта ещё нет, сервис можно поднять локально и проверить с
-телефона в той же Wi-Fi сети:
+Публичный сайт уже развёрнут; для проверки изменений без выкладки сервис
+можно поднять локально и проверить с телефона в той же Wi-Fi сети:
 
 ```bash
 python tools/serve_online.py
