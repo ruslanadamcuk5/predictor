@@ -25,7 +25,9 @@
 Authorization: Bearer <токен>
 ```
 
-Без токена сайт открыт всем. Для личного сервера токен обязателен.
+Без токена сайт открыт всем: это удобно для личного приложения, но
+`/api/v1/analyze` может вызвать любой желающий. Если нужен доступ по токену,
+задайте `PREDICTOR_TOKEN` и впишите его в настройках приложения.
 `/api/v1/update` и файлы из `/releases/` открыты без токена: приложение должно
 проверять обновление и до входа в онлайн-режим.
 
@@ -100,6 +102,32 @@ PREDICTOR_BASE_PATH=/predictor
 обычный сайт **Python WSGI** с Working directory `/home/<логин>/predictor`,
 WSGI file `/home/<логин>/predictor/app.wsgi` и пустым `PREDICTOR_BASE_PATH`.
 Код поддерживает оба варианта.
+
+### Если отдельный сайт создать нельзя
+
+Если на бесплатном тарифе уже занят единственный адрес аккаунта. Тогда
+сервис можно смонтировать в подкаталог `/predictor` существующего
+WSGI-приложения (например, Flask) через `DispatcherMiddleware`:
+
+```python
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from importlib.machinery import SourceFileLoader
+
+predictor = SourceFileLoader(
+    "predictor_wsgi", "/home/<логин>/predictor/app.wsgi"
+).load_module()
+application = DispatcherMiddleware(
+    application, {"/predictor": predictor.application}
+)
+```
+
+`online_app.py` сам учитывает `SCRIPT_NAME` и `PREDICTOR_BASE_PATH`, поэтому
+ссылки в манифесте обновления и раздача APK работают и в подкаталоге. Если
+импорт сервиса упадёт, оберните его в `try/except`, чтобы основной сайт
+продолжал работать.
+
+Отдельный сайт всё равно предпочтительнее: при обновлении основного
+приложения его WSGI-файл может быть перезаписан.
 
 Если alwaysdata показывает ошибку 500, откройте **Web → Sites → ваш сайт →
 Logs** и проверьте traceback. Чаще всего причина — неверный путь к `app.wsgi`
