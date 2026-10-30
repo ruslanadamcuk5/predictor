@@ -68,12 +68,13 @@ python/
   analysis_service.py
   analyzer.py
   auto_rules.py
+  profit.py
   rule_advisor.py
   constructor_engine.py
   sports.py
 releases/
   update.json
-  predictor-1.17.apk
+  predictor-1.18.apk
 ```
 
 Если релизы ещё не опубликованы, `releases/` будет пустым, а

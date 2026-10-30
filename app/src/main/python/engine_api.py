@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.17.0"
+APP_VERSION = "1.18.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -1382,7 +1382,7 @@ class Engine:
         group["conditions"] = conditions
         next_rule["conditions"] = group
 
-        if rec_type == "add_condition":
+        if rec_type in ("add_condition", "add_odds_floor"):
             condition = rec.get("condition")
             if not isinstance(condition, dict):
                 return None, "В рекомендации нет условия."

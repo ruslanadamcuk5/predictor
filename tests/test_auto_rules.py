@@ -247,6 +247,104 @@ check("после выключения ручное правило on",
       any(item.get("name") == "Ручное правило" and item.get("enabled")
           for item in rules_after), rules_after)
 
-check("версия движка 1.17.0", api.APP_VERSION == "1.17.0", api.APP_VERSION)
+# ---------------------------------------------------------------------
+# 5. Прибыль на дистанции: без положительного EV правило не создаётся
+# ---------------------------------------------------------------------
+def money_history(over_odds, flags, prefix="money"):
+    history = {}
+    for index, success in enumerate(flags):
+        match = {
+            "match_id": "%s%02d" % (prefix, index),
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "league": "Тест", "date": "19.10 20:30",
+            "start_time": "2026-10-19T20:30", "stat_link": "/x",
+            "is_started": False, "current_score": "0:0",
+            "odds": {"total_over": over_odds, "total_under": 3.2},
+        }
+        prediction = {
+            "target": "set1", "kind": "total",
+            "label": "Партия 1 (ТБ18.5/ТМ18.5)",
+            "verdict": "ТБ 18.5", "expected_side": "over",
+            "threshold": 18.5, "confidence_val": 0.7,
+        }
+        history["%s%02d" % (prefix, index)] = {
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "date": "%02d.10.26" % (index + 1), "league": "Тест",
+            "sent_at": "2026-10-%02dT12:00:00" % (1 + index),
+            "predictions": [prediction],
+            "set_results": [{
+                "target": "set1", "kind": "total", "success": success,
+                "score": "11:10" if success else "8:7",
+                "total": 20, "label": prediction["label"],
+                "verdict": prediction["verdict"],
+            }],
+            "stats": analyzer.make_sample(match, build_stats(18, 18, 20)),
+            "result_checked": True,
+        }
+    return history
+
+
+ALWAYS = [{"metric": "h2h.count", "args": {}, "op": "gte", "value": 0}]
+
+# 20 побед из 30 при кэфе 1.35: точность 66.7%, но ROI -10%.
+low_odds = money_history(1.35, [True] * 20 + [False] * 10, "low")
+low_obs = analyzer.build_observations(low_odds, sport="table_tennis")
+check("денежная история: 30 наблюдений", len(low_obs) == 30, len(low_obs))
+check("денежная история: кэф сохранён",
+      all(item.get("odds") == 1.35 for item in low_obs), low_obs[:1])
+low_stats = auto_rules._money(low_obs)
+check("денежная история: точность высокая",
+      low_stats["hit_rate"] >= 65, low_stats)
+check("денежная история: ROI отрицательный",
+      low_stats["roi"] < 0, low_stats)
+check("низкий кэф: правило не создаётся",
+      auto_rules._candidate(ALWAYS, low_obs, "table_tennis", 6, 60,
+                            "money") is None)
+
+# 24 победы из 30 при кэфе 2.00: и точность, и прибыль.
+high_flags = [False] * 6 + [True] * 24
+high_odds = money_history(2.0, high_flags, "high")
+high_obs = analyzer.build_observations(high_odds, sport="table_tennis")
+high_candidate = auto_rules._candidate(
+    ALWAYS, high_obs, "table_tennis", 6, 60, "money")
+check("высокий кэф: правило создаётся", high_candidate is not None)
+if high_candidate:
+    stats = high_candidate.get("auto_stats") or {}
+    check("высокий кэф: прибыль учтена", stats.get("roi", 0) > 0, stats)
+    check("высокий кэф: EV lower положительный",
+          stats.get("ev_lower", -1) > 0, stats)
+    check("высокий кэф: все ставки с коэффициентом",
+          stats.get("odds_n") == 30, stats)
+    check("высокий кэф: проверка на новых матчах",
+          stats.get("validation_ok") is True, stats)
+    check("высокий кэф: прибыльное правило приоритетнее",
+          high_candidate.get("priority") == 140, high_candidate)
+
+# Убыточное активное правило проверка должна отключить, а не хвалить.
+loss_rule = {
+    "id": "money_rule", "name": "Тотал без кэфа", "enabled": True,
+    "priority": 100,
+    "conditions": {"logic": "and", "conditions": []},
+    "action": {"type": "total", "targets": [1], "side": "over",
+               "threshold": 18.5, "confidence": 0.8},
+}
+money_review = auto_rules.review_rules(
+    low_odds, "table_tennis", [loss_rule],
+    min_samples=6, min_precision=60)
+money_items = money_review.get("reviews") or []
+check("проверка: убыточное правило в отчёте", len(money_items) == 1,
+      money_review)
+if money_items:
+    review_item = money_items[0]
+    check("проверка: убыточное правило отключают",
+          review_item.get("verdict") == "disable", review_item)
+    check("проверка: причина в деньгах",
+          "убыточн" in (review_item.get("suggestion") or ""), review_item)
+    check("проверка: отдаёт ROI", review_item.get("roi") is not None,
+          review_item)
+    check("проверка: отдаёт EV", review_item.get("ev") is not None,
+          review_item)
+
+check("версия движка 1.18.0", api.APP_VERSION == "1.18.0", api.APP_VERSION)
 
 print("OK — пройдено проверок: %d" % len(PASSED))

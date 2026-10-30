@@ -398,6 +398,15 @@
           <div class="kpi"><div class="kpi-val bad" id="anLosses">0</div><div class="kpi-lbl">не зашло</div></div>
           <div class="kpi"><div class="kpi-val" id="anCoverage">0</div><div class="kpi-lbl">снимков</div></div>
         </div>
+        <div class="kpi-row mt">
+          <div class="kpi"><div class="kpi-val" id="anRoi">—</div><div class="kpi-lbl">ROI</div></div>
+          <div class="kpi"><div class="kpi-val" id="anEv">—</div><div class="kpi-lbl">EV · нижняя граница</div></div>
+          <div class="kpi"><div class="kpi-val" id="anProfit">—</div><div class="kpi-lbl">прибыль, ед.</div></div>
+          <div class="kpi"><div class="kpi-val" id="anAvgOdds">—</div><div class="kpi-lbl">средний кэф</div></div>
+        </div>
+        <div class="field-hint mt">Деньги считаются только по прогнозам с коэффициентом:
+          ROI — прибыль на оборот, EV — ожидаемая ценность ставки с учётом кэфа.
+          Высокая точность при низком кэфе может быть убыточной.</div>
       </div>
 
       <div class="card">
@@ -503,6 +512,18 @@
         </div>
         <div class="auto-hint" id="anAutoHint"></div>
         <div class="auto-rules" id="anAutoRules"></div>
+      </div>
+
+      <div class="card" id="anPortfolioCard">
+        <div class="card-head">
+          <h3>Рабочий портфель</h3>
+          <span class="badge" id="anPortfolioBadge">0</span>
+        </div>
+        <div class="field-hint">Портфель — не все правила, а только ставки,
+          которые подтвердили прибыль на дистанции и на новых матчах.
+          Суммарная экспозиция ограничена, чтобы серия поражений не сломала банк.</div>
+        <div class="auto-hint" id="anPortfolioHint"></div>
+        <div class="list mt" id="anPortfolio"></div>
       </div>
 
       <div class="card" id="anAdvisorCard">

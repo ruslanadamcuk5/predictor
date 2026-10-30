@@ -16,6 +16,7 @@ import datetime
 import json
 
 import constructor_engine as ce
+import profit
 
 # Порог «достаточно данных»: минимум наблюдений в каждой группе.
 MIN_GROUP = 3
@@ -156,7 +157,7 @@ def build_observations(sent_predictions, kind="all", target="", limit=0,
             success = result.get("success")
             if success not in (True, False):
                 continue
-            observations.append({
+            observation = {
                 "id": pred_id,
                 "ctx": ctx,
                 "sport": getattr(ctx, "sport", "table_tennis"),
@@ -174,7 +175,11 @@ def build_observations(sent_predictions, kind="all", target="", limit=0,
                 # Полный прогноз нужен авто-генератору правил: из него
                 # восстанавливается действие конструктора (сторона, линия).
                 "prediction": prediction,
-            })
+            }
+            # Коэффициент на момент прогноза: без него нельзя считать EV,
+            # ROI и прибыль на дистанции.
+            observation["odds"] = profit.odds_for_observation(observation)
+            observations.append(observation)
 
     observations.sort(key=lambda item: str(item.get("sent_at", "")), reverse=True)
     if limit and len(observations) > int(limit):

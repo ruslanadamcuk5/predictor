@@ -37,10 +37,11 @@ for _candidate in (
             sys.path.insert(0, _candidate)
 
 import constructor_engine as ce  # noqa: E402
+import profit  # noqa: E402
 import rule_advisor  # noqa: E402
 import sports as sport_catalog  # noqa: E402
 
-SERVER_VERSION = "1.17.0"
+SERVER_VERSION = "1.18.0"
 SCHEMA_VERSION = 1
 MAX_DEVICE_ROWS = 40000
 RETENTION_DAYS = 400
@@ -214,6 +215,7 @@ def init_db():
                     label TEXT DEFAULT '',
                     verdict TEXT DEFAULT '',
                     confidence REAL,
+                    odds REAL,
                     success INTEGER,
                     score TEXT DEFAULT '',
                     total REAL,
@@ -324,10 +326,26 @@ def init_db():
                 PRAGMA user_version=1;
                 """
             )
+            _migrate(conn)
             conn.commit()
         finally:
             conn.close()
         _INITIALIZED = True
+
+
+def _migrate(conn):
+    """Добавляет новые колонки к уже созданной базе без потери истории."""
+    columns = {row["name"] for row in conn.execute(
+        "PRAGMA table_info(prediction_rows)")}
+    if "odds" not in columns:
+        conn.execute("ALTER TABLE prediction_rows ADD COLUMN odds REAL")
+
+
+def _row_get(row, key, default=None):
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
 
 
 # --------------------------------------------------------------------------
@@ -554,6 +572,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
     items = pred.get("predictions") if source == "rule" else pred.get("ai_predictions")
     if not isinstance(items, list):
         items = []
+    match = ((pred.get("stats") or {}).get("match") or {})
     rows = []
     for item in items:
         if not isinstance(item, dict):
@@ -575,6 +594,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
             total = float(total) if total is not None else None
         except (TypeError, ValueError):
             total = None
+        odds = profit.odds_from_match(item, match)
         rows.append({
             "device_id": "",
             "pred_id": str(pred_id),
@@ -587,6 +607,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
             "target": target, "kind": kind, "label": label,
             "verdict": _clean(item.get("verdict"), 160),
             "confidence": confidence,
+            "odds": odds,
             "success": success,
             "score": _clean(result.get("score"), 60),
             "total": total,
@@ -603,7 +624,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
             "team1": team1, "team2": team2, "league": league,
             "sent_at": sent_at, "target": "", "kind": "",
             "label": "Без прогноза", "verdict": "", "confidence": None,
-            "success": None, "score": "", "total": None,
+            "odds": None, "success": None, "score": "", "total": None,
             "checked_from": "", "source": source,
             "updated_at": _now_iso(),
         })
@@ -683,9 +704,26 @@ def _rec_actual_outcome(conn, device_id, rec):
     delta = None
     if before["hit_rate"] is not None and after["hit_rate"] is not None:
         delta = round(after["hit_rate"] - before["hit_rate"], 1)
+    delta_roi = None
+    if before.get("roi") is not None and after.get("roi") is not None:
+        delta_roi = round(after["roi"] - before["roi"], 1)
+    delta_ev = None
+    if before.get("ev") is not None and after.get("ev") is not None:
+        delta_ev = round(after["ev"] - before["ev"], 1)
+    money_ready = bool(after.get("value_ready"))
     verdict = "наблюдаем"
     if after["resolved"] < 3:
         verdict = "мало данных после изменения"
+    elif money_ready:
+        if (delta_roi is not None and delta_roi >= 2.0) or \
+                (after.get("ev_lower") or -1) > 0:
+            verdict = "лучше"
+        elif (delta_roi is not None and delta_roi <= -2.0) or \
+                (after.get("ev_lower") is not None and
+                 after["ev_lower"] <= -1.0):
+            verdict = "хуже"
+        else:
+            verdict = "без изменений"
     elif delta is not None and delta >= 3:
         verdict = "лучше"
     elif delta is not None and delta <= -3:
@@ -693,7 +731,9 @@ def _rec_actual_outcome(conn, device_id, rec):
     else:
         verdict = "без изменений"
     return {
-        "before": before, "after": after, "delta": delta, "verdict": verdict,
+        "before": before, "after": after, "delta": delta,
+        "delta_roi": delta_roi, "delta_ev": delta_ev,
+        "money_ready": money_ready, "verdict": verdict,
     }
 
 
@@ -713,20 +753,37 @@ def _wilson(wins, total, z=1.96):
 
 def _row_stats(rows):
     wins = losses = pending = 0
+    money_rows = []
     for row in rows:
-        success = row["success"] if isinstance(row, sqlite3.Row) else row.get("success")
+        success = _row_get(row, "success")
         if success is None:
             pending += 1
         elif success:
             wins += 1
         else:
             losses += 1
+        if success is not None:
+            money_rows.append({
+                "success": bool(success),
+                "odds": _row_get(row, "odds"),
+            })
     resolved = wins + losses
+    money = profit.summarize(money_rows)
     return {
         "wins": wins, "losses": losses, "pending": pending,
         "resolved": resolved, "total": resolved + pending,
         "hit_rate": round(wins * 100.0 / resolved, 1) if resolved else None,
         "wilson": _wilson(wins, resolved),
+        "roi": money.get("roi"),
+        "ev": money.get("ev"),
+        "ev_lower": money.get("ev_lower"),
+        "avg_odds": money.get("avg_odds"),
+        "odds_n": money.get("odds_n") or 0,
+        "profit": money.get("profit"),
+        "drawdown": money.get("drawdown"),
+        "stake_pct": money.get("stake_pct"),
+        "profitable": money.get("profitable"),
+        "value_ready": money.get("value_ready"),
     }
 
 
@@ -746,7 +803,7 @@ def _rule_performance(conn, device_id, rule_id, sport=None, since=None,
     if days:
         clauses.append("sent_at >= ?")
         params.append((_now_dt() - timedelta(days=days)).isoformat())
-    sql = ("SELECT success FROM prediction_rows WHERE " +
+    sql = ("SELECT success, odds FROM prediction_rows WHERE " +
            " AND ".join(clauses))
     rows = list(conn.execute(sql, params))
     result = _row_stats(rows)
@@ -772,8 +829,8 @@ def _sport_performance(conn, device_id, sport, since=None, until=None,
         clauses.append("sent_at >= ?")
         params.append((_now_dt() - timedelta(days=days)).isoformat())
     rows = list(conn.execute(
-        "SELECT success FROM prediction_rows WHERE " + " AND ".join(clauses),
-        params))
+        "SELECT success, odds FROM prediction_rows WHERE " +
+        " AND ".join(clauses), params))
     result = _row_stats(rows)
     result["since"] = since or ""
     result["until"] = until or ""
@@ -788,14 +845,15 @@ def _day_key(value):
 def _daily_series(conn, device_id, days=30):
     since = (_now_dt() - timedelta(days=max(1, days) - 1)).date().isoformat()
     rows = conn.execute(
-        "SELECT sent_at, success FROM prediction_rows "
+        "SELECT sent_at, success, odds FROM prediction_rows "
         "WHERE device_id = ? AND source = 'rule' AND sent_at >= ?",
         (device_id, since)).fetchall()
     buckets = {}
     for offset in range(days):
         key = (_now_dt() - timedelta(days=days - 1 - offset)).date().isoformat()
         buckets[key] = {"date": key, "wins": 0, "losses": 0,
-                        "pending": 0, "hit_rate": None}
+                        "pending": 0, "hit_rate": None,
+                        "_rows": []}
     for row in rows:
         key = _day_key(row["sent_at"])
         bucket = buckets.get(key)
@@ -807,16 +865,24 @@ def _daily_series(conn, device_id, days=30):
             bucket["wins"] += 1
         else:
             bucket["losses"] += 1
+        if row["success"] is not None:
+            bucket["_rows"].append({
+                "success": bool(row["success"]), "odds": row["odds"]})
     for bucket in buckets.values():
         resolved = bucket["wins"] + bucket["losses"]
         bucket["hit_rate"] = (round(bucket["wins"] * 100.0 / resolved, 1)
                               if resolved else None)
+        money = profit.summarize(bucket.pop("_rows"))
+        bucket["roi"] = money.get("roi")
+        bucket["profit"] = money.get("profit")
+        bucket["ev"] = money.get("ev")
+        bucket["odds_n"] = money.get("odds_n") or 0
     return list(buckets.values())
 
 
 def _window_stats(conn, device_id, start, end):
     rows = conn.execute(
-        "SELECT success FROM prediction_rows WHERE device_id = ? "
+        "SELECT success, odds FROM prediction_rows WHERE device_id = ? "
         "AND source = 'rule' AND sent_at >= ? AND sent_at < ?",
         (device_id, start, end)).fetchall()
     return _row_stats(rows)
@@ -883,7 +949,7 @@ def _minutes_since(value):
 
 def _device_stats(conn, device_id):
     rows = conn.execute(
-        "SELECT success FROM prediction_rows WHERE device_id = ? "
+        "SELECT success, odds FROM prediction_rows WHERE device_id = ? "
         "AND source = 'rule'", (device_id,)).fetchall()
     stats = _row_stats(rows)
     resolved = stats["resolved"]
@@ -982,10 +1048,31 @@ def list_devices():
             "losses": sum(item["stats"]["losses"] for item in devices),
             "open_recs": sum(item["recs"]["open"] for item in devices),
             "applied_recs": sum(item["recs"]["applied"] for item in devices),
+            "odds_n": sum(item["stats"].get("odds_n") or 0
+                          for item in devices),
+            "profit": round(sum(item["stats"].get("profit") or 0.0
+                                for item in devices), 2),
+            "drawdown": round(max([item["stats"].get("drawdown") or 0.0
+                                   for item in devices] or [0.0]), 2),
+            "profitable_devices": sum(
+                1 for item in devices
+                if (item["stats"].get("ev_lower") or -1) > 0),
         }
         resolved = total["resolved"]
         total["hit_rate"] = (round(total["wins"] * 100.0 / resolved, 1)
                              if resolved else None)
+        total["roi"] = (round(total["profit"] / total["odds_n"] * 100.0, 1)
+                        if total["odds_n"] else None)
+        total["avg_odds"] = (
+            round(sum((item["stats"].get("avg_odds") or 0.0) *
+                      (item["stats"].get("odds_n") or 0)
+                      for item in devices) / total["odds_n"], 2)
+            if total["odds_n"] else None)
+        total["ev"] = (
+            round(sum((item["stats"].get("ev") or 0.0) *
+                      (item["stats"].get("odds_n") or 0)
+                      for item in devices) / total["odds_n"], 1)
+            if total["odds_n"] else None)
         return {"ok": True, "devices": devices, "total": total,
                 "server_version": SERVER_VERSION, "server_time": _now()}
     finally:
@@ -1176,11 +1263,11 @@ def ingest(data):
                 conn.execute(
                     "INSERT INTO prediction_rows (device_id, pred_id, row_key, "
                     "sport, rule_id, rule_name, team1, team2, league, sent_at, "
-                    "target, kind, label, verdict, confidence, success, score, "
-                    "total, checked_from, source, updated_at) "
+                    "target, kind, label, verdict, confidence, odds, success, "
+                    "score, total, checked_from, source, updated_at) "
                     "VALUES (:device_id,:pred_id,:row_key,:sport,:rule_id,"
                     ":rule_name,:team1,:team2,:league,:sent_at,:target,:kind,"
-                    ":label,:verdict,:confidence,:success,:score,:total,"
+                    ":label,:verdict,:confidence,:odds,:success,:score,:total,"
                     ":checked_from,:source,:updated_at) "
                     "ON CONFLICT(device_id,pred_id,row_key) DO UPDATE SET "
                     "sport=excluded.sport, rule_id=excluded.rule_id, "
@@ -1189,7 +1276,8 @@ def ingest(data):
                     "sent_at=excluded.sent_at, target=excluded.target, "
                     "kind=excluded.kind, label=excluded.label, "
                     "verdict=excluded.verdict, confidence=excluded.confidence, "
-                    "success=excluded.success, score=excluded.score, "
+                    "odds=excluded.odds, success=excluded.success, "
+                    "score=excluded.score, "
                     "total=excluded.total, checked_from=excluded.checked_from, "
                     "source=excluded.source, updated_at=excluded.updated_at",
                     row)
@@ -1483,6 +1571,10 @@ def device_overview(device_id, days=30):
         sports = []
         for item in sports_rows:
             resolved = _int(item["wins"]) + _int(item["losses"])
+            money = _row_stats(conn.execute(
+                "SELECT success, odds FROM prediction_rows WHERE "
+                "device_id=? AND source='rule' AND sport=?",
+                (device_id, item["sport"])).fetchall())
             sports.append({
                 "sport": item["sport"],
                 "name": sport_catalog.name(item["sport"]),
@@ -1492,6 +1584,12 @@ def device_overview(device_id, days=30):
                 "pending": _int(item["pending"]),
                 "hit_rate": (round(_int(item["wins"]) * 100.0 / resolved, 1)
                              if resolved else None),
+                "roi": money.get("roi"), "ev": money.get("ev"),
+                "profit": money.get("profit"),
+                "avg_odds": money.get("avg_odds"),
+                "odds_n": money.get("odds_n") or 0,
+                "drawdown": money.get("drawdown"),
+                "profitable": money.get("profitable"),
             })
         targets_rows = conn.execute(
             "SELECT kind, COUNT(*) AS total, "
@@ -1502,11 +1600,19 @@ def device_overview(device_id, days=30):
         targets = []
         for item in targets_rows:
             resolved = _int(item["wins"]) + _int(item["losses"])
+            money = _row_stats(conn.execute(
+                "SELECT success, odds FROM prediction_rows WHERE "
+                "device_id=? AND source='rule' AND kind=?",
+                (device_id, item["kind"])).fetchall())
             targets.append({
                 "kind": item["kind"] or "—", "total": _int(item["total"]),
                 "wins": _int(item["wins"]), "losses": _int(item["losses"]),
                 "hit_rate": (round(_int(item["wins"]) * 100.0 / resolved, 1)
                              if resolved else None),
+                "roi": money.get("roi"), "ev": money.get("ev"),
+                "profit": money.get("profit"),
+                "avg_odds": money.get("avg_odds"),
+                "odds_n": money.get("odds_n") or 0,
             })
         events = _events(conn, device_id, limit=8, offset=0)
         return {
@@ -1662,9 +1768,22 @@ def _events(conn, device_id, limit=100, offset=0, sport="", kind="",
             delta = None
             if before["hit_rate"] is not None and after_perf["hit_rate"] is not None:
                 delta = round(after_perf["hit_rate"] - before["hit_rate"], 1)
+            delta_roi = None
+            if before.get("roi") is not None and after_perf.get("roi") is not None:
+                delta_roi = round(after_perf["roi"] - before["roi"], 1)
             verdict = "наблюдаем"
             if after_perf["resolved"] < 3:
                 verdict = "мало данных после изменения"
+            elif after_perf.get("value_ready"):
+                if (delta_roi is not None and delta_roi >= 2.0) or \
+                        (after_perf.get("ev_lower") or -1) > 0:
+                    verdict = "лучше"
+                elif (delta_roi is not None and delta_roi <= -2.0) or \
+                        (after_perf.get("ev_lower") is not None and
+                         after_perf["ev_lower"] <= -1.0):
+                    verdict = "хуже"
+                else:
+                    verdict = "без изменений"
             elif delta is not None and delta >= 3:
                 verdict = "лучше"
             elif delta is not None and delta <= -3:
@@ -1672,7 +1791,8 @@ def _events(conn, device_id, limit=100, offset=0, sport="", kind="",
             elif delta is not None:
                 verdict = "без изменений"
             item["outcome"] = {"before": before, "after": after_perf,
-                               "delta": delta, "verdict": verdict}
+                               "delta": delta, "delta_roi": delta_roi,
+                               "verdict": verdict}
         if item["rec_id"]:
             rec = conn.execute(
                 "SELECT status, type_title, reason FROM recommendations "
@@ -1745,8 +1865,12 @@ def device_predictions(device_id, limit=100, offset=0, sport="", rule_id="",
                 "confidence": row["confidence"], "success": row["success"],
                 "score": row["score"], "total": row["total"],
                 "source": row["source"], "kind": row["kind"],
-                "target": row["target"],
+                "target": row["target"], "odds": row["odds"],
             })
+        for game in games.values():
+            game["money"] = _row_stats([
+                {"success": item["success"], "odds": item["odds"]}
+                for item in game["rows"] if item["success"] is not None])
         return {"ok": True, "items": [games[key] for key in order],
                 "total": _int(total["c"]), "limit": limit, "offset": offset,
                 "server_time": _now()}

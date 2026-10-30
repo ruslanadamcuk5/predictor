@@ -101,29 +101,31 @@ Live-линия всех видов: команды, счёт, коэффици�
 
 | Параметр | Значение |
 |---|---|
-| Версия | 1.17 |
-| `versionCode` | 18 |
-| `APP_VERSION` | 1.17.0 |
-| `SERVER_VERSION` | 1.17.0 |
-| APK | `../Predictor-1.17.apk` |
+| Версия | 1.18 |
+| `versionCode` | 19 |
+| `APP_VERSION` | 1.18.0 |
+| `SERVER_VERSION` | 1.18.0 |
+| APK | `../Predictor-1.18.apk` |
 | minSdk | 24 (Android 7.0) |
 | targetSdk | 34 |
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
-| Размер APK | 38 916 466 байт (37,1 МБ) |
-| SHA-256 | `27df5a0566789592f8eac1f4b51a29d45b57650b674a52ac095c2964b1d59dca` |
+| Размер APK | 39 466 097 байт (37,6 МБ) |
+| SHA-256 | `5041aa456f3456a669c6ce4b3393d2d2c750d1020d50f6d83e0b783f7ff0bb26` |
 
-Состояние на 30.10.2026: офлайн-регрессии (19 файлов), тесты сервера (67),
-истории и кабинета (55) и публикации релиза (20) проходят. APK 1.17 собран
-(Chaquopy 17.1.0, Python 3.13, arm64-v8a/x86_64), подписан тем же
-debug-ключом, что и 1.16, и проверен `aapt2`/`apksigner`. Онлайн-сервис
-развёрнут на `https://predictor.alwaysdata.net` (аккаунт `predictor`, сайт
-PHP/static + CGI-адаптер `server/cgi_adapter.py`). Проверены ping, манифест
-обновления, скачивание APK с `Range`, POST `/api/v1/analyze` (обычный и gzip),
-паритет отчёта с локальным `build_report`, `POST /api/v1/sync` и все разделы
+Состояние на 30.10.2026: офлайн-регрессии (20 наборов), `test_profit.py`
+(116), `test_auto_rules.py` (62), `test_recommendations.py` (52),
+`test_history_server.py` (74), `test_online_server.py` (67) и
+`test_release_tool.py` (20) проходят. APK 1.18 собран (Chaquopy 17.1.0,
+Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,
+и проверен `aapt2`/`apksigner`. Онлайн-сервис развёрнут на
+`https://predictor.alwaysdata.net` (аккаунт `predictor`, сайт PHP/static +
+CGI-адаптер `server/cgi_adapter.py`). Проверены ping, манифест обновления,
+скачивание APK с `Range`, POST `/api/v1/analyze` (обычный и gzip), паритет
+отчёта с локальным `build_report`, `POST /api/v1/sync` и все разделы
 веб-кабинета. Чужой сайт `virusadk.alwaysdata.net` не используется.
 Осталось проверить установку на физическом устройстве и автообновление
-поверх 1.16: нужны реальная линия Betcity и ключ ИИ.
+поверх 1.17: нужны реальная линия Betcity и ключ ИИ.
 
 ## 5. Границы проекта
 
@@ -138,7 +140,7 @@ PHP/static + CGI-адаптер `server/cgi_adapter.py`). Проверены pin
 
 ## 6. Пользовательские артефакты
 
-- `Predictor-1.16.apk` — установочный файл.
+- `Predictor-1.18.apk` — установочный файл.
 - `README.md` — инструкция для пользователя.
 - `docs/ai/` — контекст для разработки.
 - `.backups/` — резервные копии перед крупными изменениями.

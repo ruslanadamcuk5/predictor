@@ -22,7 +22,7 @@ from datetime import datetime
 from email.utils import formatdate
 from urllib.parse import parse_qs, unquote
 
-SERVER_VERSION = "1.17.0"
+SERVER_VERSION = "1.18.0"
 MAX_BODY = 12 * 1024 * 1024
 MAX_PREDICTIONS = 8000
 CHUNK_SIZE = 256 * 1024

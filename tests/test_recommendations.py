@@ -319,5 +319,119 @@ check("отчёт: рекомендации по выбранным видам",
 check("отчёт: состояние сохраняется",
       isinstance(report.get("advisor_state"), dict)
       and "seen" in report["advisor_state"], report.get("advisor_state"))
+check("отчёт: портфель присутствует",
+      isinstance(report["payload"].get("portfolio"), dict),
+      report["payload"].get("portfolio"))
+check("отчёт: денежная сводка присутствует",
+      isinstance(report["payload"].get("money"), dict),
+      report["payload"].get("money"))
+
+# --------------------------------------------------------------------------
+# 6. Денежный портфель: только подтверждённые прибылью правила
+# --------------------------------------------------------------------------
+
+def portfolio_base(profitable=True, odds=True, stake=6.0, validation_ok=None):
+    rows = [{"success": True, "odds": 2.0}] * 20 + \
+           [{"success": False, "odds": 2.0}] * 10
+    return {
+        "kind": "total",
+        "target": "match",
+        "action": {"type": "total", "side": "over"},
+        "condition_group": {"logic": "and", "conditions": []},
+        "conditions": [],
+        "matched": len(rows),
+        "wins": 20,
+        "losses": 10,
+        "precision": 66.7,
+        "base": 50.0,
+        "group_size": len(rows),
+        "skip": False,
+        "money": {
+            "odds_available": odds,
+            "value_ready": odds,
+            "profitable": profitable,
+            "roi": 33.3 if profitable else -5.0,
+            "ev": 33.3 if profitable else -5.0,
+            "ev_lower": 8.0 if profitable else -12.0,
+            "profit": 10.0 if profitable else -1.5,
+            "drawdown": 2.0,
+            "avg_odds": 2.0,
+            "odds_n": len(rows) if odds else 0,
+            "stake_pct": stake,
+            "kelly": 66.7,
+        },
+        "matched_rows": rows if odds else [],
+        "validation": {"ok": validation_ok},
+    }
+
+
+entries = [
+    {"sport": "table_tennis", "rule": {"id": "core1", "name": "Ядро 1"},
+     "base": portfolio_base()},
+    {"sport": "football", "rule": {"id": "core2", "name": "Ядро 2"},
+     "base": portfolio_base()},
+    {"sport": "football", "rule": {"id": "drop1", "name": "Убыточное"},
+     "base": portfolio_base(profitable=False)},
+    {"sport": "hockey", "rule": {"id": "no1", "name": "Без кэфов"},
+     "base": portfolio_base(odds=False)},
+    {"sport": "tennis", "rule": {"id": "frag1", "name": "Хрупкое"},
+     "base": portfolio_base(validation_ok=False)},
+]
+bucket = rule_advisor._portfolio(entries)
+check("портфель: ядро только прибыльные",
+      {item["rule_id"] for item in bucket["core"]}
+      == {"core1", "core2"}, bucket["core"])
+check("портфель: убыточное вне ядра", bucket["counts"].get("drop") == 1,
+      bucket["counts"])
+check("портфель: без кэфов отмечено", bucket["counts"].get("no_odds") == 1,
+      bucket["counts"])
+check("портфель: хрупкое не в ядре", bucket["counts"].get("fragile") == 1,
+      bucket["counts"])
+check("портфель: экспозиция в лимите",
+      bucket["total_stake_pct"] <= bucket["budget_pct"] + 0.01,
+      bucket["total_stake_pct"])
+check("портфель: ставки пересчитаны",
+      all(num_item["stake_pct"] <= 6.0 for num_item in bucket["core"]),
+      bucket["core"])
+check("портфель: ожидание положительно", bucket["expected_per_bet"] > 0,
+      bucket["expected_per_bet"])
+check("портфель: есть подсказка", bool(bucket["hint"]), bucket["hint"])
+check("портфель: пустой не падает",
+      rule_advisor._portfolio([]).get("core") == [],
+      rule_advisor._portfolio([]))
+
+# --------------------------------------------------------------------------
+# 7. Рекомендация «поднять коэффициент»: жизненный цикл и применение
+# --------------------------------------------------------------------------
+floor_condition = {
+    "metric": "odds.total_over", "args": {}, "op": "gte", "value": 1.9,
+}
+floor_rule = json.loads(json.dumps(RULE))
+floor_rule["conditions"] = {"logic": "and", "conditions": [floor_condition]}
+floor_rec = {"type": "add_odds_floor", "condition": floor_condition}
+done, reason = rule_advisor._is_resolved(floor_rec, floor_rule)
+check("порог кэфа: условие уже есть — рекомендация закрыта",
+      done is True, reason)
+open_rule = json.loads(json.dumps(RULE))
+done, reason = rule_advisor._is_resolved(floor_rec, open_rule)
+check("порог кэфа: без условия — рекомендация открыта", done is False,
+      reason)
+
+import engine_api  # noqa: E402
+applied, message = engine_api.Engine._apply_rec_to_rule(
+    None, open_rule, {
+        "type": "add_odds_floor",
+        "condition": floor_condition,
+        "patch": {"conditions": {"logic": "and",
+                                 "conditions": [floor_condition]}},
+    })
+check("порог кэфа: применяется к правилу", applied is not None, message)
+check("порог кэфа: условие добавлено",
+      applied and rule_advisor._contains(applied.get("conditions"),
+                                         floor_condition),
+      applied)
+check("порог кэфа: подпись действия",
+      rule_advisor.TYPE_TITLES.get("add_odds_floor") == "Поднять коэффициент",
+      rule_advisor.TYPE_TITLES)
 
 print("OK — пройдено проверок: %d" % len(PASSED))

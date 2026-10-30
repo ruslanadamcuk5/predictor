@@ -111,7 +111,7 @@ input,select{font:inherit;color:inherit}
   -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0);
           mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0)}
 .score b{position:relative;z-index:1}
-.device .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:13px}
+.device .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:13px}
 .device .cell{background:#0d121c;border:1px solid #1f2636;border-radius:10px;padding:8px 9px}
 .device .cell .v{font-size:17px;font-weight:700;letter-spacing:-.3px}
 .device .cell .l{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.35px}
@@ -141,7 +141,7 @@ input,select{font:inherit;color:inherit}
 .ring b{position:relative;z-index:1}
 .ring small{position:absolute;bottom:12px;font-size:8.5px;font-weight:700;
   color:var(--muted);letter-spacing:.5px;z-index:1}
-.dev-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-top:16px}
+.dev-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin-top:16px}
 .dev-kpis .cell{background:#0c111a;border:1px solid #1e2535;border-radius:11px;padding:9px 11px}
 .dev-kpis .v{font-size:18px;font-weight:750;letter-spacing:-.3px}
 .dev-kpis .l{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
@@ -285,6 +285,7 @@ input,select{font:inherit;color:inherit}
   .wrap{padding:14px 12px 40px}
   .kpis{grid-template-columns:repeat(2,1fr)}
   .dev-kpis{grid-template-columns:repeat(2,1fr)}
+  .device .grid{grid-template-columns:repeat(2,1fr)}
   .devices{grid-template-columns:1fr}
   .cols3{grid-template-columns:1fr}
   .top{flex-wrap:wrap}
@@ -365,6 +366,16 @@ function num(value, digits){
   return n.toLocaleString("ru-RU", {maximumFractionDigits: digits === undefined ? 1 : digits});
 }
 function pct(value){ return value === null || value === undefined ? "—" : num(value, 1) + "%"; }
+function signed(value, suffix){
+  if(value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if(!isFinite(n)) return "—";
+  return (n > 0 ? "+" : "") + num(n, 1) + (suffix || "");
+}
+function evTone(value){
+  if(value === null || value === undefined) return "gray";
+  return Number(value) > 0 ? "ok" : (Number(value) < 0 ? "bad" : "gray");
+}
 function dt(value){
   if(!value) return "—";
   const d = new Date(value);
@@ -544,8 +555,8 @@ function renderHome(){
     ["Прогнозы", num(t.predictions,0), "сохранено на сервере"],
     ["Проверено", num(t.resolved,0), (t.wins||0)+" / "+(t.losses||0)+" (победы/поражения)"],
     ["Точность", pct(t.hit_rate), "по всем устройствам"],
-    ["Открытые рекомендации", num(t.open_recs,0), "ждут решения"],
-    ["Применено", num(t.applied_recs,0), "изменений правил"]
+    ["ROI", signed(t.roi,"%"), t.odds_n ? ("по "+num(t.odds_n,0)+" ставкам · кэф "+num(t.avg_odds,2)) : "нужны коэффициенты"],
+    ["Прибыль", signed(t.profit," ед."), "просадка "+num(t.drawdown,1)+" ед. · советов "+(t.open_recs||0)]
   ];
   const kpiHTML = kpis.map(k => '<div class="kpi"><div class="k-label">'+esc(k[0])+
     '</div><div class="k-value mono">'+esc(String(k[1]))+'</div><div class="k-sub">'+esc(k[2])+'</div></div>').join("");
@@ -582,7 +593,8 @@ function renderHome(){
       '</div>' + ring(d.quality.score, "QC", 52) + '</div>' +
       '<div class="grid">' +
         '<div class="cell"><div class="v mono">'+pct(st.hit_rate)+'</div><div class="l">точность</div></div>' +
-        '<div class="cell"><div class="v mono">'+num(st.resolved,0)+'</div><div class="l">проверено</div></div>' +
+        '<div class="cell"><div class="v mono '+evTone(st.roi)+'">'+signed(st.roi,"%")+'</div><div class="l">ROI</div></div>' +
+        '<div class="cell"><div class="v mono">'+signed(st.profit,"")+'</div><div class="l">прибыль, ед.</div></div>' +
         '<div class="cell"><div class="v mono">'+(d.recs.open||0)+'</div><div class="l">рекоменд.</div></div>' +
       '</div>' +
       '<div class="spark">'+sparkline(st.spark || [])+'</div>' +
@@ -694,8 +706,9 @@ function renderDevice(){
     '</div>' +
     '<div class="dev-kpis">' +
       '<div class="cell"><div class="v mono">'+pct(st.hit_rate)+'</div><div class="l">точность</div></div>' +
+      '<div class="cell"><div class="v mono '+evTone(st.roi)+'">'+signed(st.roi,"%")+'</div><div class="l">ROI · EV '+signed(st.ev,"%")+'</div></div>' +
+      '<div class="cell"><div class="v mono">'+signed(st.profit,"")+'</div><div class="l">прибыль, ед.</div></div>' +
       '<div class="cell"><div class="v mono">'+num(st.resolved,0)+'</div><div class="l">проверено</div></div>' +
-      '<div class="cell"><div class="v mono">'+num(st.total,0)+'</div><div class="l">всего прогнозов</div></div>' +
       '<div class="cell"><div class="v mono">'+num(d.rules.total,0)+'</div><div class="l">правил ('+num(d.rules.enabled,0)+' вкл.)</div></div>' +
       '<div class="cell"><div class="v mono">'+(d.recs.open||0)+'</div><div class="l">открытых советов</div></div>' +
     '</div>' +
@@ -765,11 +778,15 @@ async function renderOverviewTab(body, d){
       '<td class="mono">'+num(s.total,0)+'</td>' +
       '<td class="mono">'+num(s.wins,0)+' / '+num(s.losses,0)+'</td>' +
       '<td class="mono">'+pct(s.hit_rate)+'</td>' +
+      '<td class="mono '+evTone(s.roi)+'">'+signed(s.roi,"%")+'</td>' +
+      '<td class="mono">'+signed(s.profit,"")+'</td>' +
       '<td><div class="bar '+(s.hit_rate!==null&&s.hit_rate<50?"bad":(s.hit_rate<60?"warn":""))+'">' +
         '<i style="width:'+Math.max(0,Math.min(100,Number(s.hit_rate)||0))+'%"></i></div></td></tr>').join("");
   const targets = (data.targets || []).map(s =>
     '<tr><td>'+esc(s.kind || "—")+'</td><td class="mono">'+num(s.total,0)+'</td>' +
-    '<td class="mono">'+pct(s.hit_rate)+'</td></tr>').join("");
+    '<td class="mono">'+pct(s.hit_rate)+'</td>' +
+    '<td class="mono '+evTone(s.roi)+'">'+signed(s.roi,"%")+'</td>' +
+    '<td class="mono">'+signed(s.profit,"")+'</td></tr>').join("");
   const events = (data.events || []).slice(0, 6).map(e =>
     '<div class="tl '+(e.kind||"")+'"><div class="tl-head"><span class="badge ' +
       (e.kind==="created"?"ok":(e.kind==="deleted"?"bad":"brand"))+'">' +
@@ -786,11 +803,11 @@ async function renderOverviewTab(body, d){
     '</div>' +
     '<div class="cols" style="margin-top:12px">' +
       '<div class="panel"><h3>Виды спорта</h3>' +
-        (sports ? '<table class="table"><thead><tr><th>Вид</th><th>Всего</th><th>W / L</th><th>Точность</th><th></th></tr></thead><tbody>'+sports+'</tbody></table>'
+        (sports ? '<table class="table"><thead><tr><th>Вид</th><th>Всего</th><th>W / L</th><th>Точность</th><th>ROI</th><th>Прибыль</th><th></th></tr></thead><tbody>'+sports+'</tbody></table>'
                 : '<div class="empty">Пока нет проверенных прогнозов</div>') +
       '</div>' +
       '<div class="panel"><h3>Рынки</h3>' +
-        (targets ? '<table class="table"><thead><tr><th>Тип</th><th>Всего</th><th>Точность</th></tr></thead><tbody>'+targets+'</tbody></table>'
+        (targets ? '<table class="table"><thead><tr><th>Тип</th><th>Всего</th><th>Точность</th><th>ROI</th><th>Прибыль</th></tr></thead><tbody>'+targets+'</tbody></table>'
                  : '<div class="empty">Нет данных</div>') +
       '</div>' +
     '</div>' +
@@ -837,9 +854,13 @@ async function renderRulesTab(body, d){
         '<div class="r-line"><b>Действие</b>'+esc(r.action_text || "—")+'</div>' +
         '<div class="metrics">' +
           '<span>точность <b>'+pct(p.hit_rate)+'</b></span>' +
+          '<span>ROI <b class="'+evTone(p.roi)+'">'+signed(p.roi,"%")+'</b></span>' +
+          '<span>EV <b class="'+evTone(p.ev)+'">'+signed(p.ev,"%")+'</b></span>' +
+          '<span>прибыль <b>'+signed(p.profit,"")+'</b> ед.</span>' +
+          '<span>кэф <b>'+num(p.avg_odds,2)+'</b></span>' +
+          '<span>просадка <b>'+num(p.drawdown,1)+'</b></span>' +
           '<span>Wilson <b>'+pct(p.wilson)+'</b></span>' +
-          '<span>ожидает <b>'+num(p.pending,0)+'</b></span>' +
-          '<span>после правки <b>'+pct(sc.hit_rate)+'</b> ('+num(sc.resolved,0)+' проверено)</span>' +
+          '<span>после правки <b>'+pct(sc.hit_rate)+'</b> / ROI '+signed(sc.roi,"%")+'</span>' +
           '<span>правка: <b>'+esc(dt(r.last_change_at))+'</b></span>' +
         '</div>' +
         '<div class="row" style="margin-top:9px">' +
@@ -861,8 +882,9 @@ async function renderRulesTab(body, d){
 
 const REC_STATUS = {open:"Открыта", applied:"Применена", resolved:"Закрыта", dismissed:"Скрыта"};
 const REC_CLASS = {open:"brand", applied:"ok", resolved:"gray", dismissed:"warn"};
-const REC_ACTION = {add_condition:"Добавить условие", remove_condition:"Убрать условие",
-  disable_rule:"Выключить правило", adjust_confidence:"Изменить уверенность", enable_rule:"Включить правило"};
+const REC_ACTION = {add_condition:"Добавить условие", add_odds_floor:"Поднять коэффициент",
+  remove_condition:"Убрать условие", disable_rule:"Выключить правило",
+  adjust_confidence:"Изменить уверенность", enable_rule:"Включить правило"};
 
 async function renderRecsTab(body, d){
   const data = await api("/history/devices/" + encodeURIComponent(d.id) + "/recommendations?status=" + encodeURIComponent(S.recFilter));
@@ -884,11 +906,13 @@ async function renderRecsTab(body, d){
       '</div>';
     let effect = "";
     if(outcome){
+      const before = outcome.before || {};
+      const after = outcome.after || {};
       effect = '<div class="row wrap" style="margin-top:9px;gap:8px">' +
-        '<span class="badge gray">до: '+pct(outcome.before.hit_rate)+' ('+num(outcome.before.resolved,0)+')</span>' +
-        '<span class="badge gray">после: '+pct(outcome.after.hit_rate)+' ('+num(outcome.after.resolved,0)+')</span>' +
+        '<span class="badge gray">до: '+pct(before.hit_rate)+' · ROI '+signed(before.roi,"%")+' ('+num(before.resolved,0)+')</span>' +
+        '<span class="badge gray">после: '+pct(after.hit_rate)+' · ROI '+signed(after.roi,"%")+' ('+num(after.resolved,0)+')</span>' +
         '<span class="badge '+(outcome.verdict==="лучше"?"ok":(outcome.verdict==="хуже"?"bad":"warn"))+'">'+esc(outcome.verdict)+'</span>' +
-        '<span class="tiny muted">изменение точности: '+deltaHTML(outcome.delta)+'</span></div>';
+        '<span class="tiny muted">точность: '+deltaHTML(outcome.delta)+' · ROI: '+signed(outcome.delta_roi,"%")+'</span></div>';
     }
     return '<div class="rec sev-'+(r.severity||"info")+'">' +
       '<div class="r-top"><div class="grow">' +
@@ -897,11 +921,15 @@ async function renderRecsTab(body, d){
           '<span class="badge '+REC_CLASS[r.status]+'">'+esc(REC_STATUS[r.status] || r.status)+'</span>' +
           '<span class="badge gray">'+esc(r.sport_name || r.sport)+'</span>' +
           '<span class="badge gray">'+esc(r.rule_name || "правило")+'</span>' +
-          (r.gain ? '<span class="badge info">потенциал +'+num(r.gain,1)+'%</span>' : '') +
+          (r.gain ? '<span class="badge info">точность '+signed(r.gain," п.п.")+'</span>' : '') +
+          (rec.roi_gain !== undefined && rec.roi_gain !== null ? '<span class="badge '+(Number(rec.roi_gain)>=0?"ok":"bad")+'">ROI '+signed(rec.roi_gain," п.п.")+'</span>' : '') +
         '</div>' +
       '</div>' +
-      '<div style="text-align:right" class="nowrap"><div class="mono" style="font-weight:750">'+pct(r.precision_before)+' → '+pct(r.precision_after)+'</div>' +
-        '<div class="tiny muted">точность правила</div></div>' +
+      '<div style="text-align:right" class="nowrap"><div class="mono" style="font-weight:750">' +
+        (rec.roi_before !== undefined && rec.roi_before !== null
+          ? signed(rec.roi_before,"%")+' → '+signed(rec.roi_after,"%")
+          : pct(r.precision_before)+' → '+pct(r.precision_after)) + '</div>' +
+        '<div class="tiny muted">'+(rec.roi_before !== null && rec.roi_before !== undefined ? "ROI правила" : "точность правила")+'</div></div>' +
       '</div>' +
       '<div class="why">'+esc(r.reason || "—")+'</div>' +
       (r.condition_text ? '<div class="cond">'+esc(r.condition_text)+'</div>' : '') +
@@ -947,10 +975,10 @@ async function renderEventsTab(body, d){
     }).join("");
     const outcome = e.outcome;
     const effect = outcome ? '<div class="row wrap" style="margin-top:7px;gap:7px">' +
-      '<span class="badge gray">до '+pct(outcome.before.hit_rate)+'</span>' +
-      '<span class="badge gray">после '+pct(outcome.after.hit_rate)+'</span>' +
+      '<span class="badge gray">до '+pct(outcome.before.hit_rate)+' · ROI '+signed(outcome.before.roi,"%")+'</span>' +
+      '<span class="badge gray">после '+pct(outcome.after.hit_rate)+' · ROI '+signed(outcome.after.roi,"%")+'</span>' +
       '<span class="badge '+(outcome.verdict==="лучше"?"ok":(outcome.verdict==="хуже"?"bad":"warn"))+'">'+esc(outcome.verdict)+'</span>' +
-      '<span class="tiny muted">'+deltaHTML(outcome.delta)+'</span></div>' : "";
+      '<span class="tiny muted">'+deltaHTML(outcome.delta)+' · ROI '+signed(outcome.delta_roi,"%")+'</span></div>' : "";
     return '<div class="tl '+(e.kind||"")+'">' +
       '<div class="tl-head">' +
         '<span class="badge '+(e.kind==="created"?"ok":(e.kind==="deleted"?"bad":"brand"))+'">'+esc(EVENT_LABEL[e.kind]||e.kind)+'</span>' +
@@ -994,13 +1022,14 @@ async function renderPredictionsTab(body, d){
         '<span class="verdict">'+esc(r.verdict || "—")+'</span>' +
         (r.rule_name ? '<span class="badge gray">'+esc(r.rule_name)+'</span>' : '<span class="badge gray">ИИ</span>') +
         '<span class="conf mono">'+(r.confidence===null||r.confidence===undefined?"":"уверенность "+num(r.confidence*100,0)+"%")+'</span>' +
+        (r.odds!==null&&r.odds!==undefined?'<span class="badge gray mono">кэф '+num(r.odds,2)+'</span>':'') +
         '<span class="badge '+cls+'">'+result+(r.score?(" · "+esc(r.score)):"")+(r.total!==null&&r.total!==undefined?(" · "+num(r.total,1)):"")+'</span>' +
       '</div>';
     }).join("");
     return '<div class="match"><div class="m-head"><div class="grow">' +
       '<div class="teams">'+esc(m.team1)+' — '+esc(m.team2)+'</div>' +
       '<div class="meta">'+esc(m.league || "—")+' · '+esc(m.sport_name || m.sport)+' · '+esc(dt(m.sent_at))+'</div>' +
-      '</div></div><div class="rows">'+(rows || '<div class="tiny muted">Без прогнозов</div>')+'</div></div>';
+      '</div>'+(m.money && m.money.odds_n ? '<div style="text-align:right"><div class="mono '+evTone(m.money.roi)+'" style="font-weight:750">'+signed(m.money.roi,"%")+'</div><div class="tiny muted">ROI · '+signed(m.money.profit,"")+' ед.</div></div>' : '')+'</div><div class="rows">'+(rows || '<div class="tiny muted">Без прогнозов</div>')+'</div></div>';
   }).join("");
   body.innerHTML = chips +
     '<div class="spread" style="margin-bottom:10px"><span class="tiny muted">Найдено матчей: '+num(data.total,0)+'</span></div>' +

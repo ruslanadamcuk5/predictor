@@ -20,6 +20,7 @@ import re
 
 import analyzer
 import constructor_engine as ce
+import profit
 import sports as sport_catalog
 
 # Сколько условий максимум объединять в одном автоматическом правиле.
@@ -66,6 +67,11 @@ def _number(value):
         return float(str(value).replace(",", "."))
     except Exception:
         return None
+
+
+def _num(value, default=0.0):
+    number = _number(value)
+    return default if number is None else number
 
 
 def _parse_verdict(prediction):
@@ -234,6 +240,46 @@ def _groups(observations, sport):
     return result
 
 
+def _fmt_pct(value):
+    return "—" if value is None else ("%.1f" % _num(value))
+
+
+def _fmt_num(value):
+    return "—" if value is None else ("%.1f" % _num(value))
+
+
+def _fmt_signed(value):
+    return "—" if value is None else ("%+.1f" % _num(value))
+
+
+def _money(observations):
+    """Денежная статистика выборки: ROI, EV, просадка, размер ставки."""
+    return profit.summarize(profit.rows_for_observations(observations))
+
+
+def _money_stats(money):
+    """Поля денежной статистики для auto_stats и отчётов."""
+    money = money or {}
+    return {
+        "odds_n": money.get("odds_n") or 0,
+        "odds_cover": money.get("odds_covered"),
+        "avg_odds": money.get("avg_odds"),
+        "roi": money.get("roi"),
+        "ev": money.get("ev"),
+        "ev_lower": money.get("ev_lower"),
+        "profit": money.get("profit"),
+        "drawdown": money.get("drawdown"),
+        "stake_pct": money.get("stake_pct"),
+        "profitable": money.get("profitable"),
+        "value_ready": money.get("value_ready"),
+    }
+
+
+def _value_ready(money):
+    return bool((money or {}).get("odds_available")
+                and (money or {}).get("value_ready"))
+
+
 def _action_from_wins(observations, sport):
     """Самое частое действие среди удачных наблюдений."""
     counts = {}
@@ -306,6 +352,13 @@ def _candidate_sets(success_rows, failure_rows):
 
 def _candidate(conditions, observations, sport, min_samples, min_precision,
                source):
+    """Кандидат в авто-правило: сначала прибыль, потом точность.
+
+    Если в истории есть коэффициенты, правило должно не просто угадывать
+    чаще, а давать положительный ROI и EV. Высокая точность при низком
+    коэффициенте отклоняется: такие ставки убыточны на дистанции.
+    Без коэффициентов остаётся прежний порог точности.
+    """
     matched = _matched(observations, conditions)
     total = len(matched)
     if total < min_samples:
@@ -316,8 +369,28 @@ def _candidate(conditions, observations, sport, min_samples, min_precision,
     precision = wins / total * 100.0
     base = sum(1 for item in observations if item.get("success"))
     base = base / len(observations) * 100.0 if observations else 0.0
-    if precision < max(min_precision, base + MIN_IMPROVEMENT):
-        return None
+    money = _money(matched)
+    base_money = _money(observations)
+    value_mode = _value_ready(money)
+    validation = profit.validation(profit.rows_for_observations(matched))
+    if value_mode:
+        roi = _num(money.get("roi"), -999.0)
+        ev = _num(money.get("ev"), -999.0)
+        ev_lower = _num(money.get("ev_lower"), -999.0)
+        base_roi = _num(base_money.get("roi"), 0.0)
+        # Убыточное правило не создаём, даже если точность высокая.
+        if roi <= 0 or ev <= 0:
+            return None
+        if validation.get("ok") is False:
+            return None
+        if precision < 35.0:
+            return None
+        if roi < max(1.0, base_roi + MIN_IMPROVEMENT * 0.4) and \
+                precision < min_precision:
+            return None
+    else:
+        if precision < max(min_precision, base + MIN_IMPROVEMENT):
+            return None
 
     action, action_wins, action_share = _action_from_wins(matched, sport)
     if not action or action_share < MIN_ACTION_SHARE:
@@ -326,12 +399,30 @@ def _candidate(conditions, observations, sport, min_samples, min_precision,
     target = str(matched[0].get("target") or "")
     key = _action_key(action, target) + "|" + _conditions_key(conditions)
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+    stats = {
+        "precision": round(precision, 1),
+        "coverage": round(total / len(observations) * 100.0, 1),
+        "matched": total,
+        "wins": wins,
+        "losses": total - wins,
+        "base_precision": round(base, 1),
+        "action_wins": action_wins,
+        "updated_at": _now(),
+    }
+    stats.update(_money_stats(money))
+    stats["validation_roi"] = (validation.get("holdout") or {}).get("roi")
+    stats["validation_n"] = (validation.get("holdout") or {}).get("staked")
+    stats["validation_ok"] = validation.get("ok")
+    score = _candidate_score(precision, total, money, min_samples)
+    priority = 130 if precision >= 70 else (120 if precision >= 62 else 110)
+    if value_mode:
+        priority = 140 if money.get("profitable") else priority
     return {
         "id": "auto_" + digest,
         "name": "",
         "sport": sport,
         "enabled": True,
-        "priority": 130 if precision >= 70 else (120 if precision >= 62 else 110),
+        "priority": priority,
         "stop": False,
         "conditions": {"logic": "and", "conditions": conditions},
         "action": action,
@@ -340,18 +431,21 @@ def _candidate(conditions, observations, sport, min_samples, min_precision,
         "auto_kind": str(matched[0].get("kind") or ""),
         "auto_target": target,
         "auto_source": source,
-        "auto_stats": {
-            "precision": round(precision, 1),
-            "coverage": round(total / len(observations) * 100.0, 1),
-            "matched": total,
-            "wins": wins,
-            "losses": total - wins,
-            "base_precision": round(base, 1),
-            "action_wins": action_wins,
-            "updated_at": _now(),
-        },
-        "_score": precision * min(1.0, total / max(1.0, min_samples * 2.0)),
+        "auto_stats": stats,
+        "_score": score,
     }
+
+
+def _candidate_score(precision, total, money, min_samples):
+    """Оценка кандидата: прибыль важнее точности."""
+    coverage = min(1.0, total / max(1.0, float(min_samples or 6) * 2.0))
+    if _value_ready(money):
+        roi = _num(money.get("roi"), 0.0)
+        ev_lower = _num(money.get("ev_lower"), 0.0)
+        score = 50.0 + roi * 1.6 + max(-5.0, ev_lower) * 1.2
+        score += coverage * 6.0
+        return round(score, 3)
+    return round(precision * coverage, 3)
 
 
 def _skip_candidate(group, failure_rows, min_samples):
@@ -409,7 +503,12 @@ def _skip_candidate(group, failure_rows, min_samples):
 
 def _existing_candidates(existing_rules, observations, sport, min_samples,
                          min_precision):
-    """Перепроверяет уже созданные авто-правила на свежих данных."""
+    """Перепроверяет уже созданные авто-правила на свежих данных.
+
+    В режиме коэффициентов правило остаётся в наборе только если оно не
+    убыточно и хотя бы на части новых матчей подтверждает прибыль. Высокая
+    точность без положительного EV больше не считается успехом.
+    """
     result = []
     for rule in existing_rules or []:
         if not rule.get("auto"):
@@ -427,15 +526,33 @@ def _existing_candidates(existing_rules, observations, sport, min_samples,
         need = max(3, min_samples // 2) if is_skip else min_samples
         if len(matched) < need:
             continue
+        money = _money(matched)
+        validation = profit.validation(profit.rows_for_observations(matched))
+        value_mode = _value_ready(money)
         if is_skip:
             losses = sum(1 for item in matched if not item.get("success"))
             precision = losses / len(matched) * 100.0
-            if precision < SKIP_LOSS_SHARE:
+            # Фильтр полезен, если отсекает убыточные ставки, а не просто
+            # повышает точность.
+            if value_mode:
+                if _num(money.get("profit"), 0.0) >= 0 and \
+                        precision < SKIP_LOSS_SHARE:
+                    continue
+            elif precision < SKIP_LOSS_SHARE:
                 continue
         else:
             wins = sum(1 for item in matched if item.get("success"))
             precision = wins / len(matched) * 100.0
-            if precision < min_precision:
+            if value_mode:
+                roi = _num(money.get("roi"), -999.0)
+                ev = _num(money.get("ev"), -999.0)
+                if validation.get("ok") is False:
+                    continue
+                if roi < -2.0 and ev < 0:
+                    continue
+                if roi <= 0 and precision < min_precision:
+                    continue
+            elif precision < min_precision:
                 continue
         item = json.loads(json.dumps(rule, ensure_ascii=False))
         stats = item.setdefault("auto_stats", {})
@@ -445,12 +562,15 @@ def _existing_candidates(existing_rules, observations, sport, min_samples,
             "matched": len(matched),
             "updated_at": _now(),
         })
+        stats.update(_money_stats(money))
+        stats["validation_ok"] = validation.get("ok")
+        stats["validation_roi"] = (validation.get("holdout") or {}).get("roi")
         action = item.get("action") or {}
         if action.get("type") != "skip":
             action["confidence"] = round(
                 min(0.90, max(0.55, precision / 100.0)), 2)
-        item["_score"] = precision * min(
-            1.0, len(matched) / max(1.0, min_samples * 2.0))
+        item["_score"] = _candidate_score(
+            precision, len(matched), money, min_samples)
         result.append(item)
     return result
 
@@ -611,6 +731,12 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
             precision = (losses / total * 100.0) if total else 0.0
         else:
             precision = (wins / total * 100.0) if total else 0.0
+        money = _money(matched)
+        validation = profit.validation(profit.rows_for_observations(matched))
+        value_mode = _value_ready(money) and not is_skip
+        value_bad = bool(value_mode and (
+            _num(money.get("ev_lower"), 0.0) <= -1.0 or
+            _num(money.get("roi"), 0.0) <= -2.0))
 
         name = str(rule.get("name") or "").strip()
         if not name:
@@ -641,6 +767,18 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
             "lift": round(precision - base, 1),
             "group_size": len(group),
             "confidence": float(action.get("confidence") or 0.0),
+            "value_mode": value_mode,
+            "roi": money.get("roi"),
+            "ev": money.get("ev"),
+            "ev_lower": money.get("ev_lower"),
+            "avg_odds": money.get("avg_odds"),
+            "odds_n": money.get("odds_n") or 0,
+            "profit": money.get("profit"),
+            "drawdown": money.get("drawdown"),
+            "stake_pct": money.get("stake_pct"),
+            "profitable": money.get("profitable"),
+            "validation_roi": (validation.get("holdout") or {}).get("roi"),
+            "validation_ok": validation.get("ok"),
             "verdict": "collect",
             "label": "",
             "suggestion": "",
@@ -672,34 +810,78 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
             continue
 
         if is_skip:
-            if precision >= SKIP_LOSS_SHARE:
+            saved = -_num(money.get("profit"), 0.0) if money.get("odds_available") \
+                else 0.0
+            useful_by_money = bool(money.get("odds_available")
+                                   and _num(money.get("profit"), 0.0) < 0)
+            if precision >= SKIP_LOSS_SHARE or useful_by_money:
                 review["verdict"] = "keep"
-                review["suggestion"] = (
-                    "Оставить: фильтр отсекает %.0f%% неудачных прогнозов "
-                    "при пороге %.0f%%." % (precision, SKIP_LOSS_SHARE))
+                if useful_by_money:
+                    review["suggestion"] = (
+                        "Оставить: без фильтра эти матчи дали бы %+.1f ед. "
+                        "прибыли (ROI %s%%), фильтр экономит %.1f ед. и "
+                        "отсекает %.0f%% неудач." % (
+                            _num(money.get("profit"), 0.0),
+                            _fmt_pct(money.get("roi")), saved, precision))
+                else:
+                    review["suggestion"] = (
+                        "Оставить: фильтр отсекает %.0f%% неудачных "
+                        "прогнозов при пороге %.0f%%." % (
+                            precision, SKIP_LOSS_SHARE))
             else:
                 review["verdict"] = "disable"
                 review["label"] = "Отключить"
-                review["suggestion"] = (
-                    "Отключить: фильтр отсекает только %.0f%% неудач, "
-                    "нужно ≥ %.0f%%." % (precision, SKIP_LOSS_SHARE))
+                if money.get("odds_available"):
+                    review["suggestion"] = (
+                        "Отключить: ставки, которые фильтр отсекает, дают "
+                        "%+.1f ед. (ROI %s%%), то есть фильтр не спасает "
+                        "деньги, а только режет выборку." % (
+                            _num(money.get("profit"), 0.0),
+                            _fmt_pct(money.get("roi"))))
+                else:
+                    review["suggestion"] = (
+                        "Отключить: фильтр отсекает только %.0f%% неудач, "
+                        "нужно ≥ %.0f%%." % (precision, SKIP_LOSS_SHARE))
                 review["patch"] = {"enabled": False}
             reviews.append(review)
             continue
 
-        if precision < min_precision:
+        if precision < min_precision or value_bad:
             candidate = _tighten_rule(
                 sent_predictions, matched, condition_group, sport,
                 min_precision, min_samples)
             if candidate:
                 review["verdict"] = "tighten"
                 review["label"] = "Ужесточить"
-                review["suggestion"] = (
-                    "Добавить «%s»: останется %d срабатываний с точностью "
-                    "%.0f%% вместо %.0f%%." % (
-                        candidate["text"], candidate["matched"],
-                        candidate["precision"], precision))
+                if candidate.get("value_mode"):
+                    review["suggestion"] = (
+                        "Добавить «%s»: останется %d ставок, ROI %s%% → "
+                        "%s%%, EV %s%% → %s%%. Правило станет прибыльнее, "
+                        "даже если точность изменится." % (
+                            candidate["text"], candidate["matched"],
+                            _fmt_pct(money.get("roi")),
+                            _fmt_pct(candidate.get("roi")),
+                            _fmt_signed(money.get("ev")),
+                            _fmt_signed(candidate.get("ev"))))
+                else:
+                    review["suggestion"] = (
+                        "Добавить «%s»: останется %d срабатываний с "
+                        "точностью %.0f%% вместо %.0f%%." % (
+                            candidate["text"], candidate["matched"],
+                            candidate["precision"], precision))
                 review["patch"] = candidate["patch"]
+            elif value_bad:
+                review["verdict"] = "disable"
+                review["label"] = "Отключить"
+                review["suggestion"] = (
+                    "Отключить: правило убыточно — ROI %s%%, EV %s%% при "
+                    "среднем коэффициенте %s. Высокая точность не спасает, "
+                    "если коэффициент ниже справедливого. Условия, которое "
+                    "выводит правило в плюс, не нашлось." % (
+                        _fmt_pct(money.get("roi")),
+                        _fmt_signed(money.get("ev")),
+                        _fmt_num(money.get("avg_odds"))))
+                review["patch"] = {"enabled": False}
             elif precision < 50.0 or precision + 5.0 < base:
                 review["verdict"] = "disable"
                 review["label"] = "Отключить"
@@ -726,11 +908,19 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
         if loose:
             review["verdict"] = "loosen"
             review["label"] = "Расширить"
-            review["suggestion"] = (
-                "Снять «%s»: правило начнёт срабатывать %d раз вместо %d, "
-                "точность %.0f%%." % (
-                    loose["text"], loose["matched"], total,
-                    loose["precision"]))
+            if loose.get("value_mode"):
+                review["suggestion"] = (
+                    "Снять «%s»: ставок станет %d вместо %d, ROI %s%%, "
+                    "EV %s%% — прибыль не падает, а выборка растёт." % (
+                        loose["text"], loose["matched"], total,
+                        _fmt_pct(loose.get("roi")),
+                        _fmt_signed(loose.get("ev"))))
+            else:
+                review["suggestion"] = (
+                    "Снять «%s»: правило начнёт срабатывать %d раз вместо "
+                    "%d, точность %.0f%%." % (
+                        loose["text"], loose["matched"], total,
+                        loose["precision"]))
             review["patch"] = loose["patch"]
             reviews.append(review)
             continue
@@ -751,9 +941,21 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
             continue
 
         review["verdict"] = "keep"
-        review["suggestion"] = (
-            "Оставить: точность %.0f%% при цели %.0f%% и %d срабатываниях." % (
-                precision, min_precision, total))
+        if value_mode and money.get("odds_available"):
+            review["suggestion"] = (
+                "Оставить: правило прибыльно — ROI %s%%, EV %s%% на %d "
+                "ставках, просадка %s ед. Точность %.0f%% при цели %.0f%%. "
+                "Проверка на новых матчах: ROI %s%%." % (
+                    _fmt_pct(money.get("roi")),
+                    _fmt_signed(money.get("ev")),
+                    money.get("odds_n") or 0,
+                    _fmt_num(money.get("drawdown")), precision,
+                    min_precision,
+                    _fmt_pct((validation.get("holdout") or {}).get("roi"))))
+        else:
+            review["suggestion"] = (
+                "Оставить: точность %.0f%% при цели %.0f%% и %d "
+                "срабатываниях." % (precision, min_precision, total))
         reviews.append(review)
 
     reviews.sort(key=lambda item: (
@@ -787,52 +989,104 @@ def review_rules(sent_predictions, sport, rules=None, observations=None,
 
 def _tighten_rule(sent_predictions, matched, condition_group, sport,
                   min_precision, min_samples):
-    """Ищет обратное условие из неудач, которое повышает точность правила."""
+    """Ищет правку, которая повышает прибыль правила, а не только точность.
+
+    Сначала проверяется добавление признака из неудач, затем — минимальный
+    коэффициент. В режиме коэффициентов побеждает вариант с лучшим ROI и
+    подтверждением на новых матчах; без коэффициентов — по точности.
+    """
     if not matched:
         return None
     # Добавлять условие можно только к логике «И». Для «ИЛИ» новое условие
     # наоборот расширило бы правило и повысило бы охват неудач.
     if str(condition_group.get("logic") or "and").lower() != "and":
         return None
+    old_wins = sum(1 for item in matched if item.get("success"))
+    old_precision = old_wins / len(matched) * 100.0
+    old_money = _money(matched)
+    old_value = _value_ready(old_money)
+    old_roi = _num(old_money.get("roi"), 0.0)
+    old_ev_lower = _num(old_money.get("ev_lower"), 0.0)
+    best = None
+
+    def consider(condition, text, kept, floor=None):
+        nonlocal best
+        if len(kept) < max(3, int(min_samples or 6) // 2):
+            return
+        wins = sum(1 for item in kept if item.get("success"))
+        precision = wins / len(kept) * 100.0
+        money = _money(kept)
+        validation = profit.validation(profit.rows_for_observations(kept))
+        value_mode = bool(old_value and _value_ready(money))
+        if value_mode:
+            roi = _num(money.get("roi"), -999.0)
+            ev_lower = _num(money.get("ev_lower"), -999.0)
+            if roi < max(0.5, old_roi + 2.0):
+                return
+            if ev_lower <= old_ev_lower:
+                return
+            if validation.get("ok") is False:
+                return
+            score = roi * 1.4 + max(0.0, ev_lower) * 1.2
+        else:
+            if precision < max(min_precision, old_precision + 5.0):
+                return
+            removed = len(matched) - len(kept)
+            if removed < 1:
+                return
+            score = precision + min(removed, 5) * 0.5
+        patch_group = json.loads(json.dumps(condition_group,
+                                            ensure_ascii=False))
+        patch_group["conditions"] = list(
+            patch_group.get("conditions") or []) + [condition]
+        candidate = {
+            "text": text,
+            "matched": len(kept),
+            "precision": precision,
+            "score": score,
+            "patch": {"conditions": patch_group},
+            "roi": money.get("roi"),
+            "ev": money.get("ev"),
+            "ev_lower": money.get("ev_lower"),
+            "profit": money.get("profit"),
+            "value_mode": value_mode,
+            "validation_ok": validation.get("ok"),
+        }
+        if floor is not None:
+            candidate["floor"] = floor
+            candidate["condition"] = condition
+        if best is None or score > best["score"]:
+            best = candidate
+
+    # 1. Признак из неудач.
     try:
         payload = analyzer.analyze(
             sent_predictions, observations=matched, min_group=2,
             min_lift=5.0, min_hits=1, max_rows=10, with_pairs=False,
             with_means=False, sport=sport)
     except Exception:
-        return None
-    best = None
+        payload = {}
     for row in payload.get("failure") or []:
         inverse = _invert(row.get("condition"))
         if not inverse:
             continue
         kept = _matched(matched, [inverse])
-        if len(kept) < max(3, min_samples // 2):
-            continue
-        wins = sum(1 for item in kept if item.get("success"))
-        precision = wins / len(kept) * 100.0
-        if precision < max(min_precision, 50.0):
-            continue
-        old_precision = sum(1 for item in matched if item.get("success")) / \
-            len(matched) * 100.0
-        if precision < old_precision + 5.0:
-            continue
-        removed = len(matched) - len(kept)
-        if removed < 1:
-            continue
-        score = precision + min(removed, 5) * 0.5
-        if best is None or score > best["score"]:
-            patch_group = json.loads(json.dumps(condition_group,
-                                                ensure_ascii=False))
-            patch_group["conditions"] = list(
-                patch_group.get("conditions") or []) + [inverse]
-            best = {
-                "text": ce.describe_condition(inverse, sport=sport),
-                "matched": len(kept),
-                "precision": precision,
-                "score": score,
-                "patch": {"conditions": patch_group},
-            }
+        consider(inverse, ce.describe_condition(inverse, sport=sport), kept)
+
+    # 2. Минимальный коэффициент: отсекает дешёвые ставки с отрицательным EV.
+    if old_value:
+        floor = profit.best_odds_floor(matched, old_money, max(3, min_samples // 2))
+        if floor:
+            prediction = dict((matched[0].get("prediction") or {}))
+            prediction["kind"] = matched[0].get("kind")
+            condition = profit.odds_condition(prediction, floor["floor"])
+            if condition:
+                kept = [item for item in matched
+                        if (profit.odds_for_observation(item) or 0)
+                        >= floor["floor"]]
+                consider(condition, "коэффициент ≥ %.2f" % floor["floor"],
+                         kept, floor=floor["floor"])
+
     if not best:
         return None
     best.pop("score", None)
@@ -841,10 +1095,14 @@ def _tighten_rule(sent_predictions, matched, condition_group, sport,
 
 def _loosen_rule(group, condition_group, sport, min_precision, precision,
                  total):
-    """Ищет условие, которое можно снять без потери точности."""
+    """Ищет условие, которое можно снять без потери прибыли."""
     conditions = list(condition_group.get("conditions") or [])
     if len(conditions) < 2 or condition_group.get("logic") != "and":
         return None
+    old_money = _money(_matched_group(group, condition_group))
+    old_value = _value_ready(old_money)
+    old_roi = _num(old_money.get("roi"), 0.0)
+    old_ev_lower = _num(old_money.get("ev_lower"), 0.0)
     best = None
     for index, condition in enumerate(conditions):
         rest = conditions[:index] + conditions[index + 1:]
@@ -854,9 +1112,22 @@ def _loosen_rule(group, condition_group, sport, min_precision, precision,
             continue
         wins = sum(1 for item in matched if item.get("success"))
         new_precision = wins / len(matched) * 100.0
-        if new_precision < max(min_precision - 2.0, precision - 5.0):
-            continue
-        score = len(matched) * 0.1 + new_precision
+        money = _money(matched)
+        validation = profit.validation(profit.rows_for_observations(matched))
+        value_mode = bool(old_value and _value_ready(money))
+        if value_mode:
+            roi = _num(money.get("roi"), -999.0)
+            ev_lower = _num(money.get("ev_lower"), -999.0)
+            if roi < old_roi - 1.0 or ev_lower < old_ev_lower - 0.5:
+                continue
+            if validation.get("ok") is False:
+                continue
+            score = (len(matched) - total) * 0.2 + roi * 0.5 + \
+                new_precision * 0.1
+        else:
+            if new_precision < max(min_precision - 2.0, precision - 5.0):
+                continue
+            score = len(matched) * 0.1 + new_precision
         if best is None or score > best["score"]:
             best = {
                 "text": ce.describe_condition(condition, sport=sport),
@@ -864,6 +1135,10 @@ def _loosen_rule(group, condition_group, sport, min_precision, precision,
                 "precision": new_precision,
                 "score": score,
                 "patch": {"conditions": candidate_group},
+                "roi": money.get("roi"),
+                "ev": money.get("ev"),
+                "ev_lower": money.get("ev_lower"),
+                "value_mode": value_mode,
             }
     if not best:
         return None
@@ -905,10 +1180,12 @@ def generate(sent_predictions, sport, min_precision=60.0, min_samples=6,
     for (kind, target), group in groups.items():
         wins = sum(1 for item in group if item.get("success"))
         losses = len(group) - wins
+        money = _money(group)
         if wins < min_samples or losses < 2:
             reports.append({
                 "kind": kind, "target": target, "wins": wins,
                 "losses": losses, "rules": 0,
+                "roi": money.get("roi"), "ev": money.get("ev"),
                 "reason": "мало данных",
             })
             continue
@@ -942,6 +1219,8 @@ def generate(sent_predictions, sport, min_precision=60.0, min_samples=6,
         reports.append({
             "kind": kind, "target": target, "wins": wins,
             "losses": losses, "rules": len(found[:MAX_PER_GROUP]),
+            "roi": money.get("roi"), "ev": money.get("ev"),
+            "odds_n": money.get("odds_n"),
         })
 
     # Старые авто-правила участвуют в конкурсе, если ещё точны.
@@ -982,7 +1261,8 @@ def generate(sent_predictions, sport, min_precision=60.0, min_samples=6,
     signature = hashlib.sha1(json.dumps([
         sport, min_precision, min_samples,
         [(rule.get("auto_key"), rule.get("name"),
-          (rule.get("auto_stats") or {}).get("precision"))
+          (rule.get("auto_stats") or {}).get("precision"),
+          (rule.get("auto_stats") or {}).get("roi"))
          for rule in prediction_rules],
     ], sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
@@ -995,7 +1275,9 @@ def generate(sent_predictions, sport, min_precision=60.0, min_samples=6,
         "groups": reports,
         "updated_at": _now(),
         "hint": "" if prediction_rules else
-                "Пока недостаточно устойчивых закономерностей. Нужно больше результатов.",
+                ("Пока нет правил с подтверждённой прибылью. Нужно больше "
+                 "результатов и коэффициентов: точность без EV не "
+                 "гарантирует заработок на дистанции."),
     }
 
 
@@ -1019,5 +1301,15 @@ def summarize(rules):
             "losses": stats.get("losses"),
             "updated_at": stats.get("updated_at", ""),
             "skip": (rule.get("action") or {}).get("type") == "skip",
+            "roi": stats.get("roi"),
+            "ev": stats.get("ev"),
+            "ev_lower": stats.get("ev_lower"),
+            "avg_odds": stats.get("avg_odds"),
+            "odds_n": stats.get("odds_n"),
+            "profit": stats.get("profit"),
+            "drawdown": stats.get("drawdown"),
+            "stake_pct": stats.get("stake_pct"),
+            "profitable": stats.get("profitable"),
+            "value_ready": stats.get("value_ready"),
         })
     return items

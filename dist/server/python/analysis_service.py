@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import analyzer
 import auto_rules
+import profit
 import rule_advisor
 import sports as sport_catalog
 
@@ -225,6 +226,7 @@ def build_report(sent_predictions, payload=None, rules_by_sport=None,
     observations_by_sport = {}
     reviews_by_sport = {}
     totals = {"total": 0, "wins": 0, "losses": 0, "with_stats": 0}
+    money_rows = []
     insufficient = []
     no_data = []
 
@@ -238,6 +240,7 @@ def build_report(sent_predictions, payload=None, rules_by_sport=None,
             no_data.append("%s: ошибка разбора истории (%s)" %
                            (name, exc))
         observations_by_sport[sport] = all_observations
+        money_rows.extend(profit.rows_for_observations(all_observations))
 
         filtered = []
         for item in all_observations:
@@ -367,8 +370,10 @@ def build_report(sent_predictions, payload=None, rules_by_sport=None,
             generated_at = item["generated_at"]
             break
 
+    money = profit.summarize(money_rows)
     combined = {
         "ok": True,
+        "money": money,
         "options": {
             "kind": options["kind"],
             "target": options["target"],
@@ -405,6 +410,7 @@ def build_report(sent_predictions, payload=None, rules_by_sport=None,
 
     combined["rule_reviews"] = _merge_reviews(reviews_by_sport, selected)
     combined["recommendations"] = advice
+    combined["portfolio"] = advice.get("portfolio") or {}
     combined["auto_rules"] = {
         "enabled": bool(cfg.get("enabled")),
         "min_precision": review_min_precision,

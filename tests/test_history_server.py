@@ -155,6 +155,44 @@ def build_history(prefix="h"):
     return history
 
 
+def build_money_history(prefix="m"):
+    """30 прогнозов с коэффициентом: 24 победы и 6 поражений по 2.00."""
+    history = {}
+    flags = [True] * 24 + [False] * 6
+    for index, success in enumerate(flags):
+        match = {
+            "match_id": "%s%02d" % (prefix, index),
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "sport": "table_tennis", "league": "Тест",
+            "date": "19.10 20:30",
+            "start_time": "2026-10-19T20:30", "stat_link": "/x",
+            "is_started": False, "current_score": "0:0",
+            "odds": {"total_over": 2.0, "total_under": 1.9},
+        }
+        prediction = {
+            "target": "set1", "kind": "total", "label": "Тотал",
+            "verdict": "ТБ 18.5", "expected_side": "over",
+            "threshold": 18.5, "confidence_val": 0.7,
+            "rule_id": "rule-money", "rule_name": "Тотал с кэфом",
+        }
+        history["%s%02d" % (prefix, index)] = {
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "date": "%02d.10.26" % (index + 1), "league": "Тест",
+            "sport": "table_tennis",
+            "sent_at": "2026-10-%02dT13:00:00" % (1 + index),
+            "predictions": [prediction],
+            "set_results": [{
+                "target": "set1", "kind": "total", "success": success,
+                "score": "11:8" if success else "8:11", "total": 20,
+                "label": prediction["label"],
+                "verdict": prediction["verdict"],
+            }],
+            "stats": analyzer.make_sample(match, build_stats(18, 18, 20)),
+            "result_checked": True,
+        }
+    return history
+
+
 RULE = {
     "id": "rule-tt", "name": "Тотал партии", "enabled": True, "priority": 100,
     "conditions": {"logic": "and", "conditions": []},
@@ -323,6 +361,72 @@ check("прогнозы: победы/поражения посчитаны",
           for row in item["rows"] if row["success"] == 1) == 12, data)
 
 # --------------------------------------------------------------------------
+# 4б. Деньги на сервере: коэффициенты, ROI, EV и прибыль
+# --------------------------------------------------------------------------
+MONEY_SNAPSHOT = {
+    "device": {
+        "id": "dev_money", "name": "Телефон с кэфами", "model": "Pixel 8",
+        "platform": "Android 15", "app_version": "1.17.0",
+    },
+    "settings": {
+        "active_sport": "table_tennis",
+        "auto_rules": {"enabled": False},
+        "online": {},
+    },
+    "rules": {"table_tennis": [{
+        "id": "rule-money", "name": "Тотал с кэфом", "enabled": True,
+        "priority": 100,
+        "conditions": {"logic": "and", "conditions": []},
+        "action": {"type": "total", "targets": [1], "side": "over",
+                   "threshold": 18.5, "confidence": 0.7},
+    }]},
+    "predictions": build_money_history(),
+    "advisor_state": {},
+    "meta": {"model": "Pixel 8", "platform": "Android 15"},
+}
+status, data = request("POST", "/api/v1/sync", MONEY_SNAPSHOT)
+check("деньги: sync 200", status["status"] == 200, (status, data))
+check("деньги: сохранено 30 прогнозов",
+      data["synced"]["predictions"] == 30, data)
+
+status, data = request("GET", "/api/v1/history/devices/dev_money/overview")
+check("деньги: overview 200", status["status"] == 200, status)
+stats = data["device"]["stats"]
+check("деньги: кэфы учтены", stats.get("odds_n") == 30, stats)
+check("деньги: средний кэф 2.00", stats.get("avg_odds") == 2.0, stats)
+check("деньги: ROI 60%", stats.get("roi") == 60.0, stats)
+check("деньги: EV 60%", stats.get("ev") == 60.0, stats)
+check("деньги: прибыль 18 единиц", stats.get("profit") == 18.0, stats)
+check("деньги: EV lower положительный",
+      (stats.get("ev_lower") or -1) > 0, stats)
+check("деньги: правило прибыльно", stats.get("profitable") is True, stats)
+check("деньги: вид показывает ROI",
+      data["sports"][0].get("roi") == 60.0, data["sports"])
+check("деньги: вид показывает прибыль",
+      data["sports"][0].get("profit") == 18.0, data["sports"])
+daily = stats.get("daily") or []
+check("деньги: дневной ряд содержит ROI",
+      all("roi" in item and "profit" in item for item in daily), daily[:1])
+
+status, data = request("GET", "/api/v1/history/devices/dev_money/predictions")
+check("деньги: прогнозы 200", status["status"] == 200, status)
+game_rows = [row for item in data["items"] for row in item["rows"]]
+check("деньги: у прогнозов есть кэф",
+      all(row.get("odds") == 2.0 for row in game_rows), game_rows[:1])
+check("деньги: у матча есть денежная сводка",
+      all(isinstance(item.get("money"), dict) for item in data["items"]),
+      data["items"][:1])
+
+status, data = request("GET", "/api/v1/history/devices")
+total = data["total"]
+check("деньги: сводка сервера считает ROI",
+      total.get("roi") is not None, total)
+check("деньги: сводка сервера считает прибыль",
+      (total.get("profit") or 0) >= 18.0, total)
+check("деньги: сводка сервера видит прибыльные устройства",
+      (total.get("profitable_devices") or 0) >= 1, total)
+
+# --------------------------------------------------------------------------
 # 5. Переименование, авторизация и веб-интерфейс
 # --------------------------------------------------------------------------
 status, data = request("POST", "/api/v1/history/devices/dev_phone_1/rename",
@@ -353,6 +457,6 @@ check("страница состояния сохранена", status["status"]
 
 status, data = request("GET", "/api/v1/history/health")
 check("health: база создана", data.get("ok") is True
-      and data.get("devices") == 2, data)
+      and data.get("devices") == 3, data)
 
 print("\nPASSED:", len(PASSED))

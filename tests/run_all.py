@@ -27,6 +27,7 @@ OFFLINE = [
     "test_presets_new.py",
     "test_results_screen.py",
     "test_analyzer.py",
+    "test_profit.py",
     "test_auto_rules.py",
     "test_recommendations.py",
     "test_online_server.py",

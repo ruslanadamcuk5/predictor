@@ -32,6 +32,7 @@ MODULES = (
     "analysis_service.py",
     "analyzer.py",
     "auto_rules.py",
+    "profit.py",
     "rule_advisor.py",
     "constructor_engine.py",
     "sports.py",

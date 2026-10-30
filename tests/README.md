@@ -42,12 +42,15 @@ PowerShell может показать `RequestsDependencyWarning` и завер
 | `test_presets_new.py` | 46 шаблонов TT | `OK: 46 presets validated` |
 | `test_results_screen.py` | очередь + результаты + CSV | `32/32 проверок пройдено` |
 | `test_analyzer.py` | анализатор, перенос в конструктор | `OK — пройдено проверок: 108` |
+| `test_profit.py` | EV, ROI, Уилсон, Келли, просадка, out-of-sample, порог кэфа | `OK — проверок: 116` |
+| `test_auto_rules.py` | авто-правила, value-режим, проверка прибыли и API | `OK — пройдено проверок: 62` |
 | `test_sports_pipeline.py` | парсер, конструктор, анализатор по 6 видам | `OK — проверок: 255` |
 | `test_sports_metrics.py` | вычисление всех метрик по видам | `OK — вычислено метрик: 403` |
 | `check_sports_presets.py` | валидация 100 шаблонов | `errors: 0` |
-| `test_recommendations.py` | мультивыбор видов и жизненный цикл рекомендаций | `OK — пройдено проверок: 36` |
+| `test_recommendations.py` | мультивыбор, жизненный цикл рекомендаций, портфель | `OK — пройдено проверок: 52` |
 | `test_release_tool.py` | публикация APK и манифеста обновления | `OK — пройдено проверок: 20` |
-| `test_online_server.py` | ping, манифест, APK/Range, подкаталог, ленивая обёртка | `OK — пройдено проверок: 65` |
+| `test_history_server.py` | SQLite, sync, ROI/EV, кабинет и рекомендации | `PASSED: 74` |
+| `test_online_server.py` | ping, манифест, APK/Range, подкаталог, ленивая обёртка | `OK — пройдено проверок: 67` |
 
 ### Сеть
 

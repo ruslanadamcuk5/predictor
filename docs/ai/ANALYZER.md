@@ -128,7 +128,12 @@
   "failure": [],
   "success": [],
   "combos": {"failure": [], "success": []},
-  "means": []
+  "means": [],
+  "money": {"roi": 12.4, "ev": 12.4, "ev_lower": 4.1,
+             "profit": 8.2, "avg_odds": 1.94, "odds_n": 36,
+             "odds_covered": 90.0, "drawdown": 3.0, "stake_pct": 1.8},
+  "portfolio": {"core": [], "watch": [], "rules": [],
+                 "budget_pct": 10.0, "hint": "…"}
 }
 ```
 
@@ -284,13 +289,15 @@ observations_by_sport, min_samples, min_precision, state, active_sport)`.
 | `add_condition` | добавить условие в конкретное правило | `{"conditions": {...}}` |
 | `remove_condition` | убрать лишнее условие | `{"conditions": {...}}` |
 | `disable_rule` | отключить правило | `{"enabled": false}` |
+| `add_odds_floor` | поднять минимальный коэффициент | `{"conditions": {...}}` |
 | `adjust_confidence` | исправить уверенность действия | `{"action": {...}}` |
 
 Каждая рекомендация содержит `id`, `sport`, `rule_id`, `rule_name`,
 `target_rule` (имя, действие, приоритет, текущие условия), `type`,
 `type_title`, `severity`, `condition`, `condition_text`, `precision_before`,
 `precision_after`, `matched_before`, `matched_after`, `removed_losses`,
-`reason`, `patch`, `is_new`.
+`odds_before`, `roi_before`, `roi_after`, `ev_before`, `ev_after`,
+`profit_after`, `reason`, `patch`, `is_new`.
 
 Идентификатор стабилен: `sha1(sport | rule_id | type | condition_key)`.
 Состояние (`advisor_state.json`) хранит `seen`, `applied`, `resolved`,
@@ -303,6 +310,30 @@ observations_by_sport, min_samples, min_precision, state, active_sport)`.
 (`Engine.advisor`) заново читает правило, накладывает patch на текущую версию
 и сохраняет через конструктор; при логике «ИЛИ» добавление условия запрещено
 (оно расширило бы правило).
+
+## 8в-бис. Прибыль, EV и рабочий портфель (`profit.py`)
+
+Точность не равна прибыли. Для каждого наблюдения хранится коэффициент
+прогноза (`odds`, из снимка линии через `profit.odds_for_observation`).
+Денежные метрики считаются только по наблюдениям с коэффициентом:
+
+- `EV = p * odds - 1`, где `p` — доля побед; `ROI = прибыль / оборот`;
+- `ev_lower` — EV по нижней границе Уилсона: осторожная оценка, которая не
+  даёт маленькой выборке выглядеть прибыльной;
+- `stake_pct` — дробный Келли с потолком `MAX_STAKE_PCT`;
+- `drawdown` — максимальная просадка кривой прибыли;
+- `validation` — хронологическое разделение: обучение на старых матчах,
+  проверка на последних (`MIN_VALIDATION`), правило подтверждается только при
+  положительном EV lower и ROI на проверке;
+- `best_odds_floor` — минимальный коэффициент, при котором правило
+  становится прибыльным; из него строится условие `odds.* >= floor`.
+
+Портфель (`rule_advisor._portfolio`) — не список всех правил. В `core`
+попадают только правила с `value_ready`, положительным `ev_lower` и ROI;
+суммарная экспозиция ограничена `PORTFOLIO_BUDGET_PCT = 10%`, число правил —
+`MAX_PORTFOLIO = 8`. Остальные получают статусы `watch`, `fragile`,
+`no_odds`, `filter` или `drop`. Для каждого правила отдаются `stake_pct`,
+`stake_amount`, `expected`, `roi`, `ev`, `ev_lower`, `profit`, `drawdown`.
 
 ## 8г. Несколько видов и онлайн-режим
 
@@ -330,7 +361,10 @@ observations_by_sport, min_samples, min_precision, state, active_sport)`.
 - Мало данных → выводы статистически слабые.
 - Снимок содержит только то, что было на момент прогноза; более поздние игры
   в анализ не попадают.
-- Анализатор не учитывает изменение линии после отправки.
+- Анализатор не учитывает изменение линии после отправки; для денежных
+  метрик используется коэффициент, сохранённый в снимке.
+- Если коэффициентов нет, ROI/EV/прибыль не выдумываются: правило остаётся
+  `no_odds` и не попадает в портфель.
 - `with_stats` считает все прогнозы со снимком, а `observations.total` —
   только те, у которых есть и снимок, и результат, и они прошли фильтры.
 - Для настольного тенниса цель (`target`) — партия, для остальных — `match`.
