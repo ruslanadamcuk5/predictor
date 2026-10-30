@@ -8,13 +8,17 @@
     app.wsgi          — точка входа WSGI
     online_app.py     — само приложение
     cgi_adapter.py    — точка входа для сайта PHP/static (CGI)
-    python/           — модули анализатора и конструктора
+    python/           — модули анализатора, конструктора и рекомендаций
+    history_store.py  — SQLite-история устройств, правил и рекомендаций
+    history_ui.py     — веб-кабинет истории
+    index.html        — готовая главная страница (кабинет) для www/
     releases/         — APK и манифест update.json (если опубликованы)
     README.md         — памятка по настройке сайта
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 
@@ -40,12 +44,22 @@ def main():
     os.makedirs(os.path.join(DEST, "python"))
 
     for name in ("app.wsgi", "online_app.py", "lazy_app.py", "cgi_adapter.py",
-                 "README.md"):
+                 "history_store.py", "history_ui.py", "README.md"):
         shutil.copyfile(os.path.join(SOURCE_SERVER, name),
                         os.path.join(DEST, name))
     for name in MODULES:
         shutil.copyfile(os.path.join(SOURCE_PY, name),
                         os.path.join(DEST, "python", name))
+
+    # Статическая главная страница: Apache на alwaysdata отдаёт "/" как файл,
+    # поэтому кабинет должен лежать в www/index.html. Ссылки на API строятся
+    # без префикса, запросы уходят через rewrite на CGI.
+    spec = importlib.util.spec_from_file_location(
+        "history_ui", os.path.join(SOURCE_SERVER, "history_ui.py"))
+    history_ui = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(history_ui)
+    with open(os.path.join(DEST, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(history_ui.render(""))
 
     releases_dest = os.path.join(DEST, "releases")
     os.makedirs(releases_dest, exist_ok=True)

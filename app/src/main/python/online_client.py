@@ -13,13 +13,19 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
+import os
 import time
 
 import requests
 
 DEFAULT_TIMEOUT = 25
 MAX_HISTORY = 8000
+# Для периодической синхронизации достаточно последних матчей: сервер
+# пересчитывает рекомендации по той же истории, но не получает мегабайты
+# при каждом обновлении.
+MAX_SYNC_HISTORY = 3000
 # Адрес онлайн-сервиса, если пользователь не указал свой.
 DEFAULT_BASE_URL = "https://predictor.alwaysdata.net"
 # Адреса из версии 1.15: их нужно игнорировать, чтобы старые настройки
@@ -31,7 +37,7 @@ LEGACY_BASE_PREFIX = "https://virusadk.alwaysdata.net"
 # запрос в разы меньше и не содержит лишних данных.
 KEEP_RECORD = (
     "team1", "team2", "league", "date", "sport", "sent_at", "stats",
-    "predictions", "set_results", "sets_completed",
+    "predictions", "set_results", "sets_completed", "result_checked",
 )
 
 
@@ -224,4 +230,125 @@ def analyze(settings_snapshot, options, sent_predictions, rules_by_sport,
         raise OnlineError(str(data.get("error") or "Сайт не смог посчитать анализ."))
     data["online"] = True
     data["online_url"] = cfg["base_url"]
+    return data
+
+
+# --------------------------------------------------------------------------
+# Синхронизация истории для веб-кабинета
+# --------------------------------------------------------------------------
+
+SYNC_SETTING_KEYS = (
+    "active_sport", "auto_rules", "algorithm_mode", "model_thresholds",
+    "required_models", "allowed_bets", "allowed_sets", "general_filters",
+    "min_h2h_matches", "poll_interval_sec", "odds_check_enabled",
+    "bet_size_percent", "reports", "engine",
+)
+
+
+def _android_info():
+    """Модель и платформа устройства. Вне Android возвращает пустые поля."""
+    result = {"model": "", "platform": "", "android_id": ""}
+    try:
+        from java import jclass
+        build = jclass("android.os.Build")
+        model = str(build.MODEL or "").strip()
+        manufacturer = str(build.MANUFACTURER or "").strip()
+        if manufacturer and manufacturer.lower() not in model.lower():
+            model = manufacturer + " " + model
+        release = str(build.VERSION.RELEASE or "").strip()
+        sdk = str(build.VERSION.SDK_INT or "").strip()
+        result["model"] = model[:120]
+        result["platform"] = ("Android %s (SDK %s)" % (release, sdk)).strip()
+        try:
+            python_cls = jclass("com.chaquo.python.Python")
+            context = python_cls.getPlatform().getApplication()
+            secure = jclass("android.provider.Settings$Secure")
+            value = secure.getString(context.getContentResolver(), "android_id")
+            if value:
+                result["android_id"] = str(value)[:80]
+        except Exception:
+            pass
+    except Exception:
+        pass
+    if not result["model"] and os.environ.get("PREDICTOR_DEVICE_MODEL"):
+        result["model"] = os.environ["PREDICTOR_DEVICE_MODEL"][:120]
+    if not result["platform"]:
+        result["platform"] = os.environ.get("PREDICTOR_DEVICE_PLATFORM", "")[:120]
+    if not result["android_id"]:
+        result["android_id"] = os.environ.get("PREDICTOR_DEVICE_ID", "")
+    return result
+
+
+def make_device_id(seed=""):
+    raw = str(seed or "").strip()
+    if not raw:
+        raw = "predictor-%s-%s" % (os.uname().nodename if hasattr(os, "uname")
+                                   else "device", time.time())
+    return "dev_" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def device_info(settings_snapshot, app_version=""):
+    """Стабильные данные устройства для списка в веб-кабинете."""
+    snapshot = settings_snapshot or {}
+    stored = snapshot.get("device") if isinstance(snapshot.get("device"),
+                                                  dict) else {}
+    platform_info = _android_info()
+    seed = platform_info.get("android_id") or ""
+    if not seed:
+        seed = "%s|%s" % (platform_info.get("model") or "",
+                          platform_info.get("platform") or "")
+    device_id = str(stored.get("id") or "").strip()
+    if not device_id:
+        if seed.strip("|"):
+            device_id = make_device_id(seed)
+    name = str(stored.get("name") or "").strip()
+    if not name:
+        name = platform_info.get("model") or "Устройство Predictor"
+    return {
+        "id": device_id,
+        "name": name[:120],
+        "model": platform_info.get("model") or "",
+        "platform": platform_info.get("platform") or "",
+        "app_version": str(app_version or ""),
+    }
+
+
+def _sync_settings(settings_snapshot):
+    """Только параметры анализа: без токенов, ключей и Telegram."""
+    snapshot = settings_snapshot or {}
+    result = {}
+    for key in SYNC_SETTING_KEYS:
+        if key in snapshot:
+            result[key] = snapshot[key]
+    return result
+
+
+def sync(settings_snapshot, sent_predictions, rules_by_sport,
+         advisor_state=None, device=None, app_version="",
+         meta=None, overrides=None):
+    """Отправляет снимок истории и правил в веб-кабинет."""
+    cfg = config(settings_snapshot, overrides)
+    if not cfg.get("base_url"):
+        raise OnlineError("Не указан адрес сайта.")
+    predictions = _trim_predictions(sent_predictions, None)
+    if len(predictions) > MAX_SYNC_HISTORY:
+        items = list(predictions.items())
+        items.sort(key=lambda pair: str((pair[1] or {}).get("sent_at") or ""),
+                   reverse=True)
+        predictions = dict(items[:MAX_SYNC_HISTORY])
+    info = device if isinstance(device, dict) else device_info(
+        settings_snapshot, app_version)
+    payload = {
+        "device": info,
+        "settings": _sync_settings(settings_snapshot),
+        "rules": _trim_rules(rules_by_sport),
+        "predictions": predictions,
+        "advisor_state": advisor_state or {},
+        "meta": dict(meta or {}, app_version=str(app_version or ""),
+                     client="android"),
+    }
+    data = _request("POST", cfg, "/api/v1/sync", payload,
+                    timeout=max(45, cfg.get("timeout") or DEFAULT_TIMEOUT))
+    if not data.get("ok"):
+        raise OnlineError(str(data.get("error") or "Сайт не принял историю."))
     return data

@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.16.0"
+APP_VERSION = "1.17.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -59,6 +59,9 @@ class Engine:
         self._advisor_last = {}
         self._advisor_lock = threading.RLock()
         self._online_last = {}
+        self._sync_lock = threading.RLock()
+        self._sync_last_ts = 0.0
+        self._device_cache = None
         self._apply_engine_params()
 
     # ------------------------------------------------------------------ утилиты
@@ -93,6 +96,10 @@ class Engine:
                 if summary.get("error"):
                     core.events.add("ERROR", "Ошибка цикла: %s" % summary["error"])
                 self._refresh_all_auto_rules()
+                try:
+                    self._push_history()
+                except Exception:
+                    pass
             except Exception as exc:  # pragma: no cover
                 core.events.add("ERROR", "Критическая ошибка цикла: %s" % exc)
             interval = self.settings.get_poll_interval()
@@ -145,6 +152,10 @@ class Engine:
             summary.get("matches", 0), summary.get("sports", 0),
             summary.get("signals", 0)))
         self._refresh_all_auto_rules()
+        try:
+            self._push_history(force=True)
+        except Exception:
+            pass
         return self._json({"ok": True, "summary": summary})
 
     # ------------------------------------------------------------------ состояние
@@ -176,6 +187,7 @@ class Engine:
             },
             "version": APP_VERSION,
             "advice": self.advice(),
+            "online_sync": self._sync_status(),
         })
         text = self._json(status)
         self._state_cache = {"at": now, "text": text}
@@ -1523,6 +1535,157 @@ class Engine:
             },
         })
 
+    # ------------------------------------------- синхронизация с веб-кабинетом
+    def _sync_status(self):
+        current = self.settings.snapshot().get("online") or {}
+        cfg = online_client.config(self.settings.snapshot())
+        try:
+            interval = max(5, min(720, int(
+                current.get("sync_interval_min") or 15)))
+        except (TypeError, ValueError):
+            interval = 15
+        device = self._device_info()
+        return {
+            "enabled": bool(current.get("sync_enabled", True)),
+            "interval_min": interval,
+            "base_url": cfg.get("base_url") or "",
+            "last_sync": current.get("last_sync") or "",
+            "last_error": current.get("last_sync_error") or "",
+            "last_summary": current.get("last_sync_summary") or "",
+            "device_id": device.get("id") or "",
+            "device_name": device.get("name") or "",
+        }
+
+    def _device_info(self):
+        """Идентификатор и имя устройства; создаётся один раз."""
+        snapshot = self.settings.snapshot()
+        info = online_client.device_info(snapshot, APP_VERSION)
+        if self._device_cache and self._device_cache.get("id"):
+            info["id"] = self._device_cache["id"]
+            info["name"] = self._device_cache.get("name") or info["name"]
+        stored = snapshot.get("device") if isinstance(
+            snapshot.get("device"), dict) else {}
+        patch = {}
+        if info.get("id") and str(stored.get("id") or "") != info["id"]:
+            patch["id"] = info["id"]
+        if info.get("name") and str(stored.get("name") or "") != info["name"]:
+            patch["name"] = info["name"]
+        if patch:
+            try:
+                self.settings.update({"device": patch})
+            except Exception:
+                pass
+        self._device_cache = dict(info)
+        return info
+
+    def _sync_due(self):
+        current = self.settings.snapshot().get("online") or {}
+        if not bool(current.get("sync_enabled", True)):
+            return False
+        try:
+            interval = max(5, min(720, int(
+                current.get("sync_interval_min") or 15)))
+        except (TypeError, ValueError):
+            interval = 15
+        return (time.time() - float(self._sync_last_ts or 0)) >= interval * 60
+
+    def _push_history(self, force=False):
+        """Отправляет снимок истории и правил в веб-кабинет."""
+        snapshot = self.settings.snapshot()
+        current = snapshot.get("online") or {}
+        if not force and not bool(current.get("sync_enabled", True)):
+            return {"ok": True, "skipped": "синхронизация выключена"}
+        if not force and not self._sync_due():
+            return {"ok": True, "skipped": "ещё не время"}
+        with self._sync_lock:
+            if not force and not self._sync_due():
+                return {"ok": True, "skipped": "ещё не время"}
+            try:
+                raw = self.predictor.telegram.snapshot_predictions()
+                rules = self._rules_for_sports(list(sports.SPORT_ORDER))
+                device = self._device_info()
+                result = online_client.sync(
+                    snapshot, raw, rules,
+                    advisor_state=self._advisor_state,
+                    device=device, app_version=APP_VERSION,
+                    meta={"model": device.get("model") or "",
+                          "platform": device.get("platform") or ""})
+                synced = result.get("synced") or {}
+                rules_info = synced.get("rules") or {}
+                parts = []
+                if synced.get("predictions"):
+                    parts.append("прогнозов: %d" % int(synced["predictions"]))
+                if rules_info.get("created"):
+                    parts.append("новых правил: %d" % rules_info["created"])
+                if rules_info.get("updated"):
+                    parts.append("изменено правил: %d" % rules_info["updated"])
+                if rules_info.get("deleted"):
+                    parts.append("удалено правил: %d" % rules_info["deleted"])
+                summary = ", ".join(parts) or "без изменений"
+                stamp = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+                self.settings.update({"online": {
+                    "last_sync": stamp,
+                    "last_sync_error": "",
+                    "last_sync_summary": summary,
+                }})
+                self._sync_last_ts = time.time()
+                core.events.add("INFO", "История отправлена на сайт: %s" % summary)
+                return {
+                    "ok": True,
+                    "device": result.get("device") or device,
+                    "synced": synced,
+                    "message": summary,
+                    "server_version": result.get("server_version") or "",
+                    "server_time": result.get("server_time") or "",
+                }
+            except Exception as exc:
+                message = str(exc)
+                # Не повторяем попытку каждый цикл: иначе при недоступном
+                # сайте движок будет ждать таймаут бесконечно часто.
+                self._sync_last_ts = time.time()
+                self.settings.update({"online": {"last_sync_error": message}})
+                core.events.add("WARNING", "Отправка истории: %s" % message)
+                return {"ok": False, "error": message}
+
+    def sync_history(self, payload=None):
+        """API синхронизации: status / now / configure."""
+        options = {}
+        try:
+            if isinstance(payload, str) and payload.strip():
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    options = data
+            elif isinstance(payload, dict):
+                options = payload
+        except Exception as exc:
+            return self._json({"ok": False,
+                               "error": "Некорректный JSON: %s" % exc})
+        action = str(options.get("action") or "status").strip().lower()
+        if action in ("configure", "save"):
+            patch = {}
+            for key in ("sync_enabled", "sync_interval_min"):
+                if key in options:
+                    patch[key] = options.get(key)
+            if "sync_interval_min" in patch:
+                try:
+                    patch["sync_interval_min"] = max(
+                        5, min(720, int(patch["sync_interval_min"])))
+                except (TypeError, ValueError):
+                    patch["sync_interval_min"] = 15
+            if patch:
+                self.settings.update({"online": patch})
+                if patch.get("sync_enabled"):
+                    self._sync_last_ts = 0.0
+            return self._json({"ok": True, "sync": self._sync_status()})
+        if action in ("now", "run", "push", "sync"):
+            result = self._push_history(force=True)
+            status = self._sync_status()
+            result["sync"] = status
+            return self._json(result)
+        status = self._sync_status()
+        status.update({"ok": True})
+        return self._json(status)
+
     # --------------------------------------------------------------- онлайн
     def online(self, payload=None):
         """API онлайн-режима: status / test / configure."""
@@ -1583,6 +1746,7 @@ class Engine:
             "last_ok": current.get("last_ok") or "",
             "last_error": current.get("last_error") or "",
             "last_remote": dict(self._online_last),
+            "sync": self._sync_status(),
         })
 
     def get_stats(self):
@@ -1874,6 +2038,10 @@ def api_advisor(payload=None):
 
 def api_online(payload=None):
     return engine().online(payload)
+
+
+def api_sync_history(payload=None):
+    return engine().sync_history(payload)
 
 
 def api_neural(payload=None):

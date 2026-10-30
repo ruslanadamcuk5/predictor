@@ -243,6 +243,9 @@ class MainActivity : Activity() {
         fun online(payload: String): String = call("api_online", payload)
 
         @JavascriptInterface
+        fun syncHistory(payload: String): String = call("api_sync_history", payload)
+
+        @JavascriptInterface
         fun autoRules(payload: String): String = call("api_auto_rules", payload)
 
         @JavascriptInterface
@@ -332,6 +335,20 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun platform(): String = "android-${Build.VERSION.SDK_INT}"
+
+        @JavascriptInterface
+        fun openUrl(url: String): Boolean {
+            val text = url.trim()
+            if (text.isEmpty() || (!text.startsWith("https://") && !text.startsWith("http://"))) {
+                return false
+            }
+            return try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(text)))
+                true
+            } catch (t: Throwable) {
+                false
+            }
+        }
 
         // ---------------- обновления APK ----------------
         @JavascriptInterface

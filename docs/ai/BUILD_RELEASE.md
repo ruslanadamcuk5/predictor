@@ -4,7 +4,7 @@
 
 | Параметр | Значение |
 |---|---|
-| `APP_VERSION` (`engine_api.py`) | 1.16.0 |
+| `APP_VERSION` (`engine_api.py`) | 1.17.0 |
 | `versionName` (`app/build.gradle.kts`) | 1.16 |
 | `versionCode` | 17 |
 | `applicationId` | `by.betcity.predictor` |
@@ -16,7 +16,7 @@
 | Android Gradle Plugin | 8.5.2 |
 | Gradle | 8.7+ (внешний; проверено на 8.9) |
 
-APK: `../Predictor-1.16.apk` относительно корня проекта.
+APK: `../Predictor-1.17.apk` относительно корня проекта.
 
 ## 2. Где живёт версия
 
@@ -82,10 +82,10 @@ gradle --no-daemon assembleRelease
 ## 5. Копирование и проверка
 
 ```powershell
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.16.apk -Force
+Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.17.apk -Force
 
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.16.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.16.apk
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.17.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.17.apk
 ```
 
 Ожидаемые метаданные:
@@ -100,7 +100,7 @@ native-code: 'arm64-v8a' 'x86_64'
 Проверка содержимого:
 
 ```powershell
-python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.16.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
+python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.17.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
 ```
 
 `assets/chaquopy/app.imy` — zip с Python-модулями. Chaquopy 17 кладёт
@@ -190,7 +190,7 @@ python tools/prepare_server.py
 ## 7. Установка
 
 ```powershell
-adb install -r ..\Predictor-1.16.apk
+adb install -r ..\Predictor-1.17.apk
 ```
 
 `-r` сохраняет данные приложения. Не используйте `-r -d` без необходимости.

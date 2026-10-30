@@ -860,9 +860,25 @@
               сервера с самоподписанным сертификатом</div></div>
           <label class="switch"><input type="checkbox" id="setOnlineVerify"><span></span></label>
         </div>
+        <div class="field-row">
+          <div><div class="field-title">Отправлять историю в веб-кабинет</div>
+            <div class="field-hint">Правила, прогнозы и результаты будут
+              периодически уходить на сайт. В кабинете видно все устройства,
+              изменения правил и эффективность рекомендаций</div></div>
+          <label class="switch"><input type="checkbox" id="setOnlineSync"><span></span></label>
+        </div>
+        <div class="field">
+          <label>Интервал отправки</label>
+          <div class="input-suffix"><input type="number" id="setOnlineSyncInterval" min="5" max="720" step="5"><span>мин</span></div>
+          <div class="field-hint">Движок отправляет снимок при работе и после
+            каждого цикла проверки. Минимум — 5 минут.</div>
+        </div>
         <div class="auto-actions">
           <button class="btn btn-ghost btn-sm" id="btnOnlineTestSettings">Проверить подключение</button>
+          <button class="btn btn-ghost btn-sm" id="btnSyncNow">Отправить историю сейчас</button>
+          <button class="btn btn-ghost btn-sm" id="btnOpenCabinet">Открыть веб-кабинет</button>
         </div>
+        <div class="auto-hint" id="setOnlineSyncHint"></div>
         <div class="auto-hint" id="setOnlineHint"></div>
       </div>
 

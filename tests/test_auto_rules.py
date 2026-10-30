@@ -247,6 +247,6 @@ check("после выключения ручное правило on",
       any(item.get("name") == "Ручное правило" and item.get("enabled")
           for item in rules_after), rules_after)
 
-check("версия движка 1.16.0", api.APP_VERSION == "1.16.0", api.APP_VERSION)
+check("версия движка 1.17.0", api.APP_VERSION == "1.17.0", api.APP_VERSION)
 
 print("OK — пройдено проверок: %d" % len(PASSED))

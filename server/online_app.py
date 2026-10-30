@@ -14,13 +14,15 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import traceback
 from datetime import datetime
 from email.utils import formatdate
+from urllib.parse import parse_qs, unquote
 
-SERVER_VERSION = "1.16.0"
+SERVER_VERSION = "1.17.0"
 MAX_BODY = 12 * 1024 * 1024
 MAX_PREDICTIONS = 8000
 CHUNK_SIZE = 256 * 1024
@@ -34,6 +36,8 @@ for _candidate in (
         sys.path.insert(0, _candidate)
 
 import analysis_service  # noqa: E402
+import history_store  # noqa: E402
+import history_ui  # noqa: E402
 
 TOKEN = str(os.environ.get("PREDICTOR_TOKEN") or "").strip()
 AUTH_REQUIRED = bool(TOKEN)
@@ -63,6 +67,38 @@ def _now():
     return datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
 
+def _query(environ):
+    raw = str(environ.get("QUERY_STRING") or "")
+    try:
+        return {key: values[-1] for key, values in parse_qs(
+            raw, keep_blank_values=True).items()}
+    except Exception:
+        return {}
+
+
+def _qint(query, name, default=0, minimum=0, maximum=1000):
+    try:
+        value = int(query.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _qbool(query, name, default=False):
+    value = str(query.get(name) or "").strip().lower()
+    if not value:
+        return default
+    return value in ("1", "true", "yes", "on", "да")
+
+
+def _read_json_body(environ):
+    try:
+        data = _read_body(environ)
+    except HttpError:
+        raise
+    return data if isinstance(data, dict) else {}
+
+
 def _json_response(start_response, data, status=200, extra_headers=None, head=False):
     body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
     headers = [
@@ -90,7 +126,7 @@ def _reason(status):
     }.get(status, "OK")
 
 
-def _html_response(start_response, html, status=200):
+def _html_response(start_response, html, status=200, head=False):
     body = (html or "").encode("utf-8")
     start_response("%d %s" % (status, _reason(status)), [
         ("Content-Type", "text/html; charset=utf-8"),
@@ -98,7 +134,7 @@ def _html_response(start_response, html, status=200):
         ("Cache-Control", "no-store"),
         ("X-Predictor-Server", SERVER_VERSION),
     ])
-    return [body]
+    return [b""] if head else [body]
 
 
 def _header(environ, name):
@@ -468,6 +504,8 @@ def _dashboard(environ):
     <ul>
       <li><code>GET {prefix}/api/v1/ping</code> — проверка связи.</li>
       <li><code>POST {prefix}/api/v1/analyze</code> — расчёт анализа и рекомендаций.</li>
+      <li><code>POST {prefix}/api/v1/sync</code> — приём истории устройства.</li>
+      <li><code>GET {prefix}/api/v1/history/devices</code> — список устройств.</li>
       <li><code>GET {prefix}/api/v1/update</code> — манифест обновления APK.</li>
       <li><code>GET {prefix}/releases/&lt;файл&gt;.apk</code> — файл обновления.</li>
     </ul>
@@ -513,6 +551,76 @@ class Application(object):
                 _check_auth(environ)
                 data = _read_body(environ)
                 return _json_response(start_response, analyze(data))
+            if path in ("/api/v1/sync", "/api/v1/history/sync"):
+                if method != "POST":
+                    raise HttpError(405, "Метод не поддерживается.")
+                _check_auth(environ)
+                data = _read_json_body(environ)
+                return _json_response(start_response, history_store.ingest(data))
+            if path in ("/api/v1/history/health", "/api/v1/history/db"):
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                _check_auth(environ)
+                return _json_response(start_response, history_store.health())
+            if path in ("/api/v1/history/devices", "/api/v1/devices"):
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                _check_auth(environ)
+                return _json_response(start_response, history_store.list_devices(),
+                                      head=(method == "HEAD"))
+            match = re.match(
+                r"^/api/(?:v1/)?(?:history/)?devices/([^/]+)"
+                r"(?:/(overview|rules|recommendations|events|predictions|"
+                r"rename|delete))?$", path)
+            if match:
+                device_id = unquote(match.group(1))
+                section = match.group(2) or "overview"
+                query = _query(environ)
+                _check_auth(environ)
+                if section == "rename":
+                    if method != "POST":
+                        raise HttpError(405, "Метод не поддерживается.")
+                    body = _read_json_body(environ)
+                    updated = history_store.rename_device(
+                        device_id, body.get("name") or "")
+                    if updated is None:
+                        raise HttpError(404, "Устройство не найдено.")
+                    return _json_response(start_response, {
+                        "ok": True, "device": updated,
+                        "server_time": _now()})
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                if section == "overview":
+                    data = history_store.device_overview(
+                        device_id, days=_qint(query, "days", 30, 7, 180))
+                elif section == "rules":
+                    data = history_store.device_rules(
+                        device_id, sport=query.get("sport") or "")
+                elif section == "recommendations":
+                    data = history_store.device_recommendations(
+                        device_id,
+                        status=query.get("status") or "",
+                        limit=_qint(query, "limit", 200, 1, 1000))
+                elif section == "events":
+                    data = history_store.device_events(
+                        device_id,
+                        limit=_qint(query, "limit", 100, 1, 1000),
+                        offset=_qint(query, "offset", 0, 0, 1000000),
+                        sport=query.get("sport") or "",
+                        kind=query.get("kind") or "",
+                        rule_id=query.get("rule_id") or "")
+                else:
+                    data = history_store.device_predictions(
+                        device_id,
+                        limit=_qint(query, "limit", 100, 1, 500),
+                        offset=_qint(query, "offset", 0, 0, 1000000),
+                        sport=query.get("sport") or "",
+                        rule_id=query.get("rule_id") or "",
+                        status=query.get("status") or "all")
+                if data is None:
+                    raise HttpError(404, "Устройство не найдено.")
+                return _json_response(start_response, data,
+                                      head=(method == "HEAD"))
             if path == "/api/v1/update":
                 if method not in ("GET", "HEAD"):
                     raise HttpError(405, "Метод не поддерживается.")
@@ -525,10 +633,19 @@ class Application(object):
                 if method not in ("GET", "HEAD"):
                     raise HttpError(405, "Метод не поддерживается.")
                 return _serve_release(environ, start_response, path)
-            if path == "/":
+            if path in ("/", "/history", "/cabinet"):
                 if method not in ("GET", "HEAD"):
                     raise HttpError(405, "Метод не поддерживается.")
-                return _html_response(start_response, _dashboard(environ))
+                prefix = _script_prefix(environ)
+                return _html_response(
+                    start_response, history_ui.render(prefix),
+                    head=(method == "HEAD"))
+            if path == "/service":
+                if method not in ("GET", "HEAD"):
+                    raise HttpError(405, "Метод не поддерживается.")
+                return _html_response(
+                    start_response, _dashboard(environ),
+                    head=(method == "HEAD"))
             raise HttpError(404, "Страница не найдена.")
         except HttpError as exc:
             return _json_response(start_response, {

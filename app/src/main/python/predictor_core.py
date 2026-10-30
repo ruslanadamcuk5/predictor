@@ -430,6 +430,19 @@ class BotSettings:
             "verify_ssl": True,
             "last_ok": "",
             "last_error": "",
+            # Периодическая отправка истории на сайт: веб-кабинет видит
+            # устройства, правила, рекомендации и их результаты.
+            "sync_enabled": True,
+            "sync_interval_min": 15,
+            "last_sync": "",
+            "last_sync_error": "",
+            "last_sync_summary": "",
+        },
+        # Идентификатор устройства для веб-кабинета. Создаётся один раз
+        # и не содержит персональных данных.
+        "device": {
+            "id": "",
+            "name": "",
         },
         # Проверка обновлений APK. manifest_url пуст — берётся адрес
         # онлайн-сайта + /api/v1/update или встроенный адрес по умолчанию.
@@ -471,7 +484,8 @@ class BotSettings:
 
     NESTED = ("model_thresholds", "allowed_bets", "allowed_sets",
               "general_filters", "telegram", "reports", "notifications",
-              "engine", "auto_rules", "neural", "online", "updates")
+              "engine", "auto_rules", "neural", "online", "updates",
+              "device")
 
     def __init__(self, path=SETTINGS_FILE):
         self.path = path

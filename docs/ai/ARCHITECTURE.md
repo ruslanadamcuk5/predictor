@@ -336,19 +336,29 @@ app.js ──> Bridge.online/analyzer ──> engine_api.api_analyzer
 ```
 
 - `server/online_app.py` — WSGI-приложение без внешних зависимостей:
-  `GET /` — статус, `GET /api/v1/ping`, `POST /api/v1/analyze`.
-- `server/app.wsgi` — точка входа для alwaysdata.
+  `GET /` — веб-кабинет, `GET /service` — статус, `GET /api/v1/ping`,
+  `POST /api/v1/analyze`, `POST /api/v1/sync`, `GET /api/v1/history/*`.
+- `server/app.wsgi` — точка входа для alwaysdata; `server/cgi_adapter.py` —
+  CGI-вариант для статического сайта.
+- `server/history_store.py` — SQLite-хранилище: устройства, прогнозы,
+  правила, события изменений, рекомендации и журнал синхронизаций.
+- `server/history_ui.py` — самодостаточный HTML/CSS/JS кабинета без CDN.
 - `tools/prepare_server.py` собирает `dist/server/` с копиями
   `analysis_service.py`, `analyzer.py`, `rule_advisor.py`, `auto_rules.py`,
-  `constructor_engine.py`, `sports.py`.
+  `constructor_engine.py`, `sports.py`, а также готовый `index.html`.
 - Авторизация — заголовок `Authorization: Bearer <token>`; токен задаётся
   переменной окружения `PREDICTOR_TOKEN`. Пустой токен означает открытый
   доступ (только для локальных тестов).
-- Сервер не хранит историю пользователя: снимок приходит в запросе, отчёт
-  возвращается в ответе. `advisor_state` хранится на телефоне.
+- `POST /api/v1/analyze` остаётся самодостаточным: снимок приходит в запросе,
+  отчёт возвращается в ответе. `advisor_state` хранится на телефоне.
+- `POST /api/v1/sync` сохраняет снимок: сервер обновляет правила, пишет diff
+  изменений, складывает прогнозы и результаты, пересчитывает рекомендации и
+  считает эффект «до/после». Секреты из настроек не сохраняются.
 - Ответы сжимаются gzip, если клиент прислал `Accept-Encoding: gzip`.
 
-Настройки: `settings.online` = `{enabled, url, token, timeout, fallback_local}`.
+Настройки: `settings.online` = `{enabled, url, token, timeout, fallback_local,
+sync_enabled, sync_interval_min, last_sync, last_sync_error,
+last_sync_summary}`; `settings.device` = `{id, name}`.
 
 ## 10. Внешние зависимости
 

@@ -2456,6 +2456,22 @@ function renderSettings(s) {
   if ($('setOnlineVerify')) {
     $('setOnlineVerify').checked = online.verify_ssl !== false;
   }
+  if ($('setOnlineSync')) {
+    $('setOnlineSync').checked = online.sync_enabled !== false;
+  }
+  if ($('setOnlineSyncInterval')) {
+    $('setOnlineSyncInterval').value =
+      String(Math.max(5, Math.min(720, num(online.sync_interval_min) || 15)));
+  }
+  const syncHint = $('setOnlineSyncHint');
+  if (syncHint) {
+    const parts = [];
+    if (online.last_sync) parts.push('Последняя отправка: ' + online.last_sync);
+    if (online.last_sync_summary) parts.push(online.last_sync_summary);
+    if (online.last_sync_error) parts.push('Ошибка: ' + online.last_sync_error);
+    syncHint.textContent = parts.join(' · ');
+    syncHint.className = 'auto-hint' + (online.last_sync_error ? ' warn' : '');
+  }
   const onlineHint = $('setOnlineHint');
   if (onlineHint) {
     const parts = [];
@@ -2577,6 +2593,10 @@ function collectSettings() {
       ? $('setOnlineFallback').checked : true,
     verify_ssl: $('setOnlineVerify')
       ? $('setOnlineVerify').checked : true,
+    sync_enabled: $('setOnlineSync')
+      ? $('setOnlineSync').checked : true,
+    sync_interval_min: Math.max(5, Math.min(720,
+      ($('setOnlineSyncInterval') ? num($('setOnlineSyncInterval').value) : 15) || 15)),
   });
 
   s.updates = Object.assign({}, s.updates || {}, {
@@ -2965,6 +2985,10 @@ function bind() {
   if (onlineSettings) onlineSettings.addEventListener('click', () => navigate('settings'));
   const settingsOnlineTest = $('btnOnlineTestSettings');
   if (settingsOnlineTest) settingsOnlineTest.addEventListener('click', testOnlineSettings);
+  const syncNow = $('btnSyncNow');
+  if (syncNow) syncNow.addEventListener('click', syncHistoryNow);
+  const openCabinetBtn = $('btnOpenCabinet');
+  if (openCabinetBtn) openCabinetBtn.addEventListener('click', openCabinet);
 
   const updateCheck = $('btnUpdateCheck');
   if (updateCheck) updateCheck.addEventListener('click', () => {
@@ -4672,6 +4696,9 @@ function renderOnlineStatus() {
     const parts = [];
     if (cfg.last_ok) parts.push('Последняя успешная связь: ' + cfg.last_ok);
     if (cfg.last_error) parts.push('Последняя ошибка: ' + cfg.last_error);
+    if (cfg.last_sync) parts.push('история отправлена: ' + cfg.last_sync +
+      (cfg.last_sync_summary ? ' (' + cfg.last_sync_summary + ')' : ''));
+    if (cfg.last_sync_error) parts.push('история: ' + cfg.last_sync_error);
     status.textContent = parts.join(' · ');
     status.className = 'auto-hint' + (cfg.last_error ? ' warn' : '');
   }
@@ -4748,6 +4775,40 @@ function testOnlineSettings() {
   } finally {
     loader(false);
   }
+}
+
+function syncHistoryNow() {
+  loader(true);
+  try {
+    const res = call('syncHistory', JSON.stringify({ action: 'now' }));
+    if (res && res.ok) {
+      const summary = res.message || 'история отправлена';
+      toast('Веб-кабинет обновлён: ' + summary, 'ok');
+      if (res.sync && state.settings) {
+        // Не смешиваем статус синхронизации с настройками онлайн-режима:
+        // поле enabled у них означает разное.
+        state.settings.online = Object.assign({}, state.settings.online || {}, {
+          last_sync: res.sync.last_sync || '',
+          last_sync_error: res.sync.last_error || '',
+          last_sync_summary: res.sync.last_summary || '',
+        });
+      }
+    } else {
+      toast((res && res.error) || 'Не удалось отправить историю', 'error');
+    }
+    renderSettings(state.settings || {});
+    renderOnlineStatus();
+  } finally {
+    loader(false);
+  }
+}
+
+function openCabinet() {
+  const url = onlineBaseUrl();
+  if (bridge && typeof bridge.openUrl === 'function') {
+    if (bridge.openUrl(url)) return;
+  }
+  window.open(url, '_blank');
 }
 
 function testOnlineFromAnalyzer() {

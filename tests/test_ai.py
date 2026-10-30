@@ -437,6 +437,6 @@ check("таймаут по умолчанию 60", assistant.config()["timeout"]
       assistant.config()["timeout"])
 
 # ------------------------------------------------------------------ версия
-check("версия движка 1.16.0", api.APP_VERSION == "1.16.0", api.APP_VERSION)
+check("версия движка 1.17.0", api.APP_VERSION == "1.17.0", api.APP_VERSION)
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

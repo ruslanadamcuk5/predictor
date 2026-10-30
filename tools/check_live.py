@@ -58,6 +58,21 @@ def main():
     ok &= check("ping", status == 200 and ping.get("ok") is True,
                 (status, body[:200]))
 
+    status, _, body = request(base + "/", timeout=args.timeout)
+    page = body.decode("utf-8", "replace")
+    ok &= check("веб-кабинет", status == 200 and "Кабинет истории" in page
+                and "/api/v1" in page, (status, page[:160]))
+
+    status, _, body = request(base + "/api/v1/history/devices",
+                              headers=headers, timeout=args.timeout)
+    try:
+        history = json.loads(body.decode("utf-8"))
+    except Exception:
+        history = {}
+    ok &= check("API истории", status == 200 and history.get("ok") is True
+                and isinstance(history.get("devices"), list),
+                (status, body[:200]))
+
     status, _, body = request(base + "/api/v1/update",
                               timeout=args.timeout)
     try:

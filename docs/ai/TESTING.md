@@ -46,6 +46,7 @@ python tests\test_auto_rules.py
 python tests\test_recommendations.py
 python tests\test_release_tool.py
 python tests\test_online_server.py
+python tests\test_history_server.py
 ```
 
 Проверка уже развёрнутого сайта (не требует Android):
@@ -144,7 +145,7 @@ python -m http.server 8765 --bind 127.0.0.1   # из tools/ui_harness
 Требуется arm64 Android 7.0+ (или x86_64 эмулятор).
 
 ```powershell
-adb install -r ..\Predictor-1.16.apk
+adb install -r ..\Predictor-1.17.apk
 adb logcat -c
 adb shell am start -n by.betcity.predictor/.MainActivity
 adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
@@ -246,14 +247,14 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 ## 7. Проверка APK
 
 ```powershell
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.16.apk -Force
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.16.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.16.apk
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Predictor-1.17.apk -Force
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.17.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.17.apk
 ```
 
 Ожидается:
 
-- `versionCode 17`, `versionName 1.16`;
+- `versionCode 18`, `versionName 1.17`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;
@@ -267,7 +268,7 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.16.apk
 Проверка содержимого:
 
 ```powershell
-python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.16.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
+python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.17.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
 ```
 
 ## 8. Что считается неудачей
