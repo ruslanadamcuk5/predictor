@@ -1,4 +1,5 @@
 .cursorrules
+.gitignore
 AGENTS.md
 CLAUDE.md
 CONTEXT.md
@@ -8,7 +9,6 @@ README.md
 build.gradle.kts
 build_log.txt
 gradle.properties
-local.properties
 settings.gradle.kts
 .github/
   copilot-instructions.md
@@ -30,16 +30,21 @@ app/
             predictor/
               EngineService.kt
               MainActivity.kt
+              UpdateManager.kt
       python/
         ai_assistant.py
         ai_inspector.py
+        analysis_service.py
         analyzer.py
         auto_rules.py
         constructor_engine.py
         engine_api.py
         nn_core.py
         nn_trainer.py
+        online_client.py
         predictor_core.py
+        profit.py
+        rule_advisor.py
         sports.py
         typing_extensions.py
       res/
@@ -69,6 +74,26 @@ app/
           themes.xml
         xml/
           file_paths.xml
+dist/
+  server/
+    README.md
+    app.wsgi
+    cgi_adapter.py
+    history_store.py
+    history_ui.py
+    index.html
+    lazy_app.py
+    online_app.py
+    python/
+      analysis_service.py
+      analyzer.py
+      auto_rules.py
+      constructor_engine.py
+      profit.py
+      rule_advisor.py
+      sports.py
+    releases/
+      update.json
 docs/
   ai/
     AI_PROMPT.md
@@ -106,6 +131,16 @@ docs/
         table_tennis.json
         tennis.json
         volleyball.json
+releases/
+  update.json
+server/
+  README.md
+  app.wsgi
+  cgi_adapter.py
+  history_store.py
+  history_ui.py
+  lazy_app.py
+  online_app.py
 tests/
   README.md
   check_sports_presets.py
@@ -119,10 +154,15 @@ tests/
   test_engine_core.py
   test_engine_e2e.py
   test_full_cycle.py
+  test_history_server.py
   test_live_analysis.py
   test_nn.py
+  test_online_server.py
   test_parse_stats.py
   test_presets_new.py
+  test_profit.py
+  test_recommendations.py
+  test_release_tool.py
   test_results.py
   test_results_screen.py
   test_sports_metrics.py
@@ -148,7 +188,11 @@ tests/
       volleyball_3.html
 tools/
   README.md
+  check_live.py
   dump_ai_context.py
+  prepare_server.py
+  publish_release.py
+  serve_online.py
   ui_harness/
     README.md
     app.js

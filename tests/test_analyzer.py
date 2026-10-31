@@ -407,7 +407,7 @@ check("наблюдение из цикла помечено успешным", 
 cycle_result = analyzer.analyze(eng.predictor.telegram.sent_predictions)
 check("анализатор не падает на одном наблюдении",
       cycle_result["ok"] is True and cycle_result["observations"]["total"] == 1)
-check("версия движка", api.APP_VERSION == "1.18.0", api.APP_VERSION)
+check("версия движка", api.APP_VERSION == "1.19.0", api.APP_VERSION)
 
 
 print("OK — пройдено проверок: %d" % len(PASSED))

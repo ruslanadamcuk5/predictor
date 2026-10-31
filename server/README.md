@@ -74,7 +74,7 @@ python/
   sports.py
 releases/
   update.json
-  predictor-1.18.apk
+  predictor-1.19.apk
 ```
 
 Если релизы ещё не опубликованы, `releases/` будет пустым, а

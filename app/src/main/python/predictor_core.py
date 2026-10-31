@@ -119,6 +119,18 @@ WINDOW_SIZE = 10
 WINDOW_MIN_HITS = 6
 MARKOV_MIN_SAMPLE = 5
 RECENCY_DECAY = 0.85
+# Вес моделей в ансамбле. Частота исходов и «свежая форма» информативнее
+# простого продолжения серии, поэтому streak и base_rate весят меньше.
+MODEL_WEIGHTS = {
+    "streak": 0.55,
+    "window": 1.00,
+    "markov1": 0.85,
+    "markov2": 0.70,
+    "recency": 1.15,
+    "base_rate": 0.60,
+}
+# Насколько сильно уверенность сжимается к 50% на малой выборке.
+PROB_SHRINK = 8.0
 BASE_RATE_MIN_N = 10
 
 MAX_SETS_TRACKED = 7
@@ -351,14 +363,17 @@ class BotSettings:
             "set1": True, "set2": True, "set3": True,
             "set4": True, "set5": True,
         },
+        # Пороги качества: лучше меньше прогнозов, но точнее. Значения
+        # 1.18 были фактически отключены (10% уверенности, 20% согласия),
+        # поэтому в линию уходили почти все партии подряд.
         "general_filters": {
-            "min_strong": 1,
-            "min_agreement": 0.20,
-            "min_confidence": 0.10,
-            "min_active": 1,
-            "vote_weight_base": 0.30,
+            "min_strong": 2,
+            "min_agreement": 0.55,
+            "min_confidence": 0.56,
+            "min_active": 2,
+            "vote_weight_base": 0.34,
         },
-        "min_h2h_matches": 5,
+        "min_h2h_matches": 6,
         "debug_verbose": False,
         # --- параметры, добавленные для приложения ---
         "telegram": {
@@ -519,7 +534,25 @@ class BotSettings:
         return data
 
     def _migrate(self, data):
-        """Убирает устаревшие адреса, сохраняя остальные настройки."""
+        """Убирает устаревшие адреса и мягкие пороги 1.18."""
+        filters = data.get("general_filters")
+        if isinstance(filters, dict):
+            legacy = {"min_strong": 1, "min_agreement": 0.20,
+                      "min_confidence": 0.10, "min_active": 1,
+                      "vote_weight_base": 0.30}
+            try:
+                untouched = all(
+                    abs(float(filters.get(key, value)) - value) < 1e-9
+                    for key, value in legacy.items())
+            except (TypeError, ValueError):
+                untouched = False
+            if untouched:
+                filters.update(self.DEFAULTS["general_filters"])
+        try:
+            if int(data.get("min_h2h_matches") or 0) == 5:
+                data["min_h2h_matches"] = self.DEFAULTS["min_h2h_matches"]
+        except Exception:
+            pass
         online = data.get("online")
         if isinstance(online, dict):
             base = str(online.get("base_url") or "").strip()
@@ -2021,6 +2054,7 @@ class ProbabilityEnsemble:
                 continue
             active.append(model)
             weight = max(0.0, model["wilson_lower"] - self.vote_weight_base)
+            weight *= MODEL_WEIGHTS.get(model["name"], 0.8)
             if weight <= 0:
                 continue
             votes[prediction] = votes.get(prediction, 0.0) + weight
@@ -2033,15 +2067,33 @@ class ProbabilityEnsemble:
         agreement = top_weight / total_weight if total_weight else 0.0
 
         agreeing = [m for m in active if m["prediction"] == top]
-        confidence = (sum(m["wilson_lower"] for m in agreeing) / len(agreeing)
-                      if agreeing else 0.0)
+
+        # Калибровка вместо среднего Wilson. Уверенность — оценка вероятности
+        # именно этого исхода, а не «насколько модели были точны в среднем»:
+        # согласие голосов + доля исхода в свежей истории + покрытие моделями.
+        recency = {}
+        total_recency = 0.0
+        for idx, value in enumerate(reversed(self.seq)):
+            weight = RECENCY_DECAY ** idx
+            recency[value] = recency.get(value, 0.0) + weight
+            total_recency += weight
+        top_share = (recency.get(top, 0.0) / total_recency
+                     if total_recency else 0.0)
+        coverage = (len(agreeing) / float(len(active))) if active else 0.0
+        raw = 0.50 * agreement + 0.30 * top_share + 0.20 * coverage
+        n = len(self.seq)
+        shrink = n / (n + PROB_SHRINK)
+        probability = 0.5 + (raw - 0.5) * shrink
+        probability = max(0.5, min(0.97, probability))
 
         return {
             "prediction": top,
             "models": models,
             "strong": len(agreeing),
             "agreement": agreement,
-            "confidence": confidence,
+            "confidence": probability,
+            "prob": probability,
+            "hit_share": top_share,
             "votes": votes,
         }
 
@@ -2938,19 +2990,48 @@ class PredictorEnsemble:
 
     # ---------- последовательности ----------
     def _build_set_sequences(self, set_index, h2h, stats):
-        winner_seq, total_seq = [], []
-        for match in reversed(h2h):
+        """Последовательность исходов партии: очные + свежая форма.
+
+        Раньше учитывались только очные встречи, хотя страница статистики
+        содержит последние игры каждого игрока. Из-за этого прогноз по
+        партии опирался на матчи годичной давности и игнорировал форму.
+        Теперь наблюдения объединяются по дате: старая история → свежая.
+        """
+        rows = []
+        for match in h2h:
             sets = match.get("sets_parsed") or []
             if len(sets) < set_index:
                 continue
             player1 = match.get("player1", "")
             a, b = sets[set_index - 1]
-            total_seq.append("TM" if (a + b) < PROB_THRESHOLD else "TO")
-            if self._names_match(stats["team1"], player1):
-                winner_seq.append("T1" if a > b else "T2")
-            elif self._names_match(stats["team2"], player1):
-                winner_seq.append("T2" if a > b else "T1")
-        return winner_seq, total_seq
+            total = "TM" if (a + b) < PROB_THRESHOLD else "TO"
+            if self._names_match(stats.get("team1", ""), player1):
+                winner = "T1" if a > b else "T2"
+            elif self._names_match(stats.get("team2", ""), player1):
+                winner = "T2" if a > b else "T1"
+            else:
+                continue
+            rows.append((match.get("date_obj") or datetime.min,
+                         winner, total))
+
+        recent = stats.get("recent") or {}
+        for side in ("team1", "team2"):
+            for game in recent.get(side) or []:
+                sets = game.get("sets") or []
+                if len(sets) < set_index:
+                    continue
+                a, b = sets[set_index - 1]
+                # sets ориентированы на игрока: (свои, чужие).
+                if side == "team1":
+                    winner = "T1" if a > b else "T2"
+                else:
+                    winner = "T2" if a > b else "T1"
+                total = "TM" if (a + b) < PROB_THRESHOLD else "TO"
+                rows.append((game.get("date_obj") or datetime.min,
+                             winner, total))
+
+        rows.sort(key=lambda item: item[0])
+        return [row[1] for row in rows], [row[2] for row in rows]
 
     # ---------- фильтры ----------
     def _check_general_filters(self, agg, label=""):
@@ -3099,6 +3180,11 @@ class PredictorEnsemble:
         if len(h2h) < self.settings.get_min_h2h():
             self.stats["no_h2h"] += 1
             return []
+        try:
+            min_confidence = float(self.settings.get_filter("min_confidence"))
+        except Exception:
+            min_confidence = 0.56
+        floor = max(0.56, min_confidence)
 
         predictions = []
         for set_index in range(1, 6):
@@ -3116,13 +3202,40 @@ class PredictorEnsemble:
                 if result:
                     predictions.append(result)
 
+        predictions = [item for item in predictions
+                       if item["confidence_val"] >= floor]
         best = {}
         for prediction in predictions:
             key = (prediction["target"], prediction["kind"])
             if key not in best or \
                     prediction["confidence_val"] > best[key]["confidence_val"]:
                 best[key] = prediction
-        return list(best.values())
+        ranked = sorted(best.values(),
+                        key=lambda item: -item["confidence_val"])
+        if not ranked:
+            return []
+
+        # Каждая партия — отдельный рынок, но прогнозы сильно коррелированы.
+        # Раньше в сообщение уходило до десяти ставок на один матч; это
+        # раздувало выборку и роняло точность. Оставляем лучший исход,
+        # лучший тотал и, при явном перевесе, третий прогноз.
+        chosen = []
+        for kind in ("winner", "total"):
+            for prediction in ranked:
+                if prediction["kind"] == kind:
+                    chosen.append(prediction)
+                    break
+        for prediction in ranked:
+            if len(chosen) >= 3:
+                break
+            if prediction in chosen:
+                continue
+            if prediction["confidence_val"] >= 0.64:
+                chosen.append(prediction)
+        chosen.sort(key=lambda item: (
+            0 if item["kind"] == "winner" else 1,
+            -item["confidence_val"]))
+        return chosen
 
     def _analyze_generic(self, stats, match):
         """Базовый матчевый прогноз для футбола, хоккея, баскетбола,
@@ -3172,6 +3285,11 @@ class PredictorEnsemble:
             if side == "X" or abs(adj) >= 8:
                 confidence = 0.55 if side == "X" else \
                     min(0.82, 0.50 + abs(adj) / 100.0)
+                # Малая выборка не должна выглядеть уверенной: сжимаем
+                # оценку к 50%, пока не набрано достаточно свежих игр.
+                sample = len(recent_p1) + len(recent_p2)
+                confidence = 0.5 + (confidence - 0.5) * min(
+                    1.0, (sample + 3.0) / 13.0)
                 if confidence >= min_conf:
                     verdict = {"P1": "П1", "P2": "П2", "X": "Ничья"}[side]
                     predictions.append({
@@ -3216,6 +3334,9 @@ class PredictorEnsemble:
                 side = "over" if delta > 0 else "under"
                 confidence = min(0.82, 0.50 + abs(delta) /
                                  max(1.0, line * 0.45))
+                sample = len(recent_p1) + len(recent_p2)
+                confidence = 0.5 + (confidence - 0.5) * min(
+                    1.0, (sample + 3.0) / 13.0)
                 if confidence >= min_conf:
                     text = _fmt_line(line)
                     predictions.append({

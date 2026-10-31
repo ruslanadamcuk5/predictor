@@ -41,7 +41,7 @@ import profit  # noqa: E402
 import rule_advisor  # noqa: E402
 import sports as sport_catalog  # noqa: E402
 
-SERVER_VERSION = "1.18.0"
+SERVER_VERSION = "1.19.0"
 SCHEMA_VERSION = 1
 MAX_DEVICE_ROWS = 40000
 RETENTION_DAYS = 400

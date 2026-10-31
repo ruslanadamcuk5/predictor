@@ -450,6 +450,30 @@ check("кабинет: вкладки устройства",
 check("кабинет: обращается к API истории",
       "/api/v1" in html and "/history/devices" in html, html[:300])
 check("кабинет: ссылка на проверку связи", "/api/v1/ping" in html, html[:400])
+check("кабинет: пропуск к содержимому и ARIA-вкладки",
+      'class="skip"' in html and "Перейти к содержимому" in html
+      and 'role="tablist"' in html and "aria-selected" in html, html[:400])
+check("кабинет: адаптивные брейкпоинты для телефона и планшета",
+      all('@media (max-width:%dpx)' % width in html
+          for width in (1180, 820, 620, 400)), html[:400])
+check("кабинет: таблицы превращаются в карточки на телефоне",
+      ".table thead{display:none}" in html and "data-label" in html,
+      html[:400])
+check("кабинет: панель фильтров и быстрые действия",
+      "toolbar-band" in html and "predOddsOnly" in html
+      and "data-rec-filter" in html and "Экспорт" in html,
+      html[:400])
+check("кабинет: периоды истории и выгрузка",
+      "[7,30,90,180]" in html and "function csv(" in html
+      and "function download(" in html,
+      html[:400])
+check("кабинет: вкладки перерисовываются через hash-маршрут",
+      "S.tab = el.dataset.tab" not in html
+      and 'location.hash = "#/device/"' in html, html[:400])
+check("кабинет: шапка и липкие вкладки учитывают высоту",
+      "syncTopbarHeight" in html and "--topbar-h" in html, html[:400])
+check("кабинет: кольцо качества не перекрывает подпись",
+      'class="score ring"' in html and ".score small" in html, html[:400])
 
 status, data = request("GET", "/service")
 check("страница состояния сохранена", status["status"] == 200
