@@ -54,6 +54,13 @@ STOP_EV_LOWER = -1.0
 DROUGHT_MIN_MARKET = 8
 DROUGHT_MIN_GAP = 6
 DROUGHT_MIN_DAYS = 1.0
+# Даже если новых наблюдений рынка нет (правило — единственный источник
+# сигналов по рынку), тишину видно по времени с последнего срабатывания.
+# Порог адаптивный: не меньше часа и не меньше четырёх обычных интервалов
+# между наблюдениями рынка.
+DROUGHT_MIN_HOURS = 1.0
+DROUGHT_SILENCE_FACTOR = 4.0
+DROUGHT_FRESH_HOURS = 24.0
 LOOSEN_SLACK = 3.0
 # Сколько правил держать в рабочем портфеле одновременно.
 MAX_PORTFOLIO = 8
@@ -561,13 +568,17 @@ def _parse_stamp(value):
         return None
 
 
-def _drought_stats(base, group, need):
+def _drought_stats(base, group, need=None):
     """Признаки засухи: правило молчит, хотя рынок прогнозируется.
 
-    Возвращает число матчей рынка, прошедших без срабатывания, и сколько
-    дней длится тишина. ``None`` — правило работает нормально.
+    Смотрим не на общее число срабатываний за всю историю, а на свежесть:
+    сколько матчей рынка прошло после последнего сигнала и сколько времени
+    длится тишина. Правило, которое когда-то сработало достаточно раз, но
+    давно молчит, тоже получает рекомендацию по смягчению.
+
+    ``None`` — правило работает нормально.
     """
-    if base.get("skip") or base.get("matched", 0) >= need:
+    if base.get("skip"):
         return None
     if len(group) < DROUGHT_MIN_MARKET:
         return None
@@ -579,26 +590,42 @@ def _drought_stats(base, group, need):
         last_at = max(str(item.get("sent_at") or "") for item in matched)
         gap = sum(1 for item in group
                   if str(item.get("sent_at") or "") > last_at)
-    days = 0.0
+    stamps = [stamp for stamp in
+              (_parse_stamp(item.get("sent_at")) for item in group)
+              if stamp]
+    end = max(stamps) if stamps else None
     start = _parse_stamp(last_at) if last_at else None
+    days = 0.0
+    age_hours = 0.0
+    expected_hours = 0.0
+    now = datetime.datetime.now()
     if start:
-        stamps = [stamp for stamp in
-                  (_parse_stamp(item.get("sent_at")) for item in group)
-                  if stamp]
-        if stamps:
-            end = max(stamps)
-            if end > start:
-                days = (end - start).total_seconds() / 86400.0
-    if gap < DROUGHT_MIN_GAP and days < DROUGHT_MIN_DAYS:
+        if end and end > start:
+            days = (end - start).total_seconds() / 86400.0
+        if now > start:
+            age_hours = (now - start).total_seconds() / 3600.0
+    if stamps:
+        span = max(stamps) - min(stamps)
+        expected_hours = (span.total_seconds() / 3600.0 /
+                          max(1, len(stamps) - 1))
+    fresh = bool(end and (now - end).total_seconds() <=
+                 DROUGHT_FRESH_HOURS * 3600.0)
+    # Тишина засчитывается, только если после последнего сигнала рынок жил.
+    # Если новых наблюдений нет, смотрим на время: свежий рынок + давно
+    # замолчавшее правило — тоже засуха (правило могло отсечь все матчи).
+    by_gap = gap >= DROUGHT_MIN_GAP
+    by_days = days >= DROUGHT_MIN_DAYS and gap >= 1
+    by_age = (fresh and age_hours >= max(
+        DROUGHT_MIN_HOURS, expected_hours * DROUGHT_SILENCE_FACTOR))
+    if not (by_gap or by_days or by_age):
         return None
     return {
         "gap": int(gap),
-        "days": round(days, 1),
+        "days": round(max(days, age_hours / 24.0), 1),
+        "hours": round(age_hours, 1),
         "last_at": last_at,
         "market": len(group),
     }
-
-
 def _loosen_step(condition, value):
     """Осторожный шаг для числового порога, с учётом единиц метрики."""
     metric_id = str(condition.get("metric") or "")
@@ -685,10 +712,14 @@ def _loosen_candidates(conditions, sport):
 def _simulate_loosen(group, base, sport, need, min_precision):
     """Подбирает самое осторожное смягчение, возвращающее правилу сигналы.
 
-    Точность после правки не должна упасть ниже цели анализа (с допуском
-    ``LOOSEN_SLACK``) и не должна стать хуже средней по рынку. Из прошедших
-    проверку вариантов выбирается самый мягкий: сначала минимальный сдвиг
-    порога, и только потом — больший охват.
+    Основной порог — точность после правки не ниже цели анализа с допуском
+    ``LOOSEN_SLACK`` и не хуже средней по рынку. Если правило молчит и ни
+    один вариант не дотягивает до цели, остаётся мягкий запасной путь:
+    вернуть сигналы с точностью выше средней по рынку. Так застоявшееся
+    правило не остаётся «мёртвым» из-за слишком строгого порога.
+
+    Из прошедших проверку вариантов выбирается самый мягкий: сначала
+    минимальный сдвиг порога, и только потом — больший охват.
     """
     condition_group = base["condition_group"]
     if str(condition_group.get("logic") or "and").lower() != "and":
@@ -696,9 +727,18 @@ def _simulate_loosen(group, base, sport, need, min_precision):
     conditions = list(condition_group.get("conditions") or [])
     if not conditions:
         return None
+    try:
+        need = max(MIN_KEPT, int(need or MIN_KEPT))
+    except (TypeError, ValueError):
+        need = MIN_KEPT
+    base_precision = _num(base.get("base"), 0.0)
     target = max(float(min_precision or 60.0) - LOOSEN_SLACK,
-                 _num(base.get("base"), 0.0) + 1.0)
-    valid = []
+                 base_precision + 1.0)
+    # Запасной порог: не хуже рынка и не более чем на 10 п.п. ниже цели.
+    fallback_target = min(target, max(base_precision + 1.0,
+                                      float(min_precision or 60.0) - 10.0))
+    strict = []
+    reserved = []
     seen = set()
     for candidate in _loosen_candidates(conditions, sport):
         if candidate["key"] in seen:
@@ -708,14 +748,19 @@ def _simulate_loosen(group, base, sport, need, min_precision):
         matched = auto_rules._matched_group(group, next_group)
         if len(matched) < need:
             continue
+        # Смягчение должно реально вернуть сигналы, а не просто поменять
+        # подпись условия без нового охвата.
+        if len(matched) <= _num(base.get("matched"), 0):
+            continue
         wins = sum(1 for item in matched if item.get("success"))
         precision = _pct(wins, len(matched))
-        if precision < target:
+        if precision < fallback_target:
             continue
         money = _money(matched)
-        if money.get("odds_available") and                 _num(money.get("roi"), 0.0) < -2.0:
+        if money.get("odds_available") and \
+                _num(money.get("roi"), 0.0) < -2.0:
             continue
-        valid.append({
+        item = {
             "group": next_group,
             "kind": candidate["kind"],
             "condition": candidate["condition"],
@@ -734,7 +779,13 @@ def _simulate_loosen(group, base, sport, need, min_precision):
                 profit.rows_for_observations(matched)),
             "distance": candidate["distance"],
             "examples": _examples(matched, True),
-        })
+            "relaxed": precision < target,
+        }
+        if precision >= target:
+            strict.append(item)
+        else:
+            reserved.append(item)
+    valid = strict or reserved
     if not valid:
         return None
     best_precision = max(item["precision"] for item in valid)
@@ -745,6 +796,7 @@ def _simulate_loosen(group, base, sport, need, min_precision):
     finalists.sort(key=lambda item: (
         item["distance"], -item["precision"], -item["matched"]))
     best = finalists[0]
+    best["relaxed"] = bool(reserved and not strict) or best.get("relaxed", False)
     best["score"] = round(
         best["precision"] + min(best["matched"], need) * 0.5 -
         best["distance"] * 0.1, 2)
@@ -752,9 +804,10 @@ def _simulate_loosen(group, base, sport, need, min_precision):
 
 
 def _loosen_recommendation(sport, rule, group, base, need, min_samples,
-                           min_precision):
+                           min_precision, drought=None):
     """Рекомендация «смягчить правило», если оно давно не срабатывает."""
-    drought = _drought_stats(base, group, need)
+    if drought is None:
+        drought = _drought_stats(base, group, need)
     if not drought:
         return None
     sim = _simulate_loosen(group, base, sport, need, min_precision)
@@ -773,6 +826,7 @@ def _loosen_recommendation(sport, rule, group, base, need, min_samples,
     rec["change_text"] = sim["change_text"]
     rec["silent_market"] = drought["gap"]
     rec["silent_days"] = drought["days"]
+    rec["silent_hours"] = drought.get("hours")
     rec["last_match_at"] = drought["last_at"]
     rec["matched_after"] = sim["matched"]
     rec["wins_after"] = sim["wins"]
@@ -797,8 +851,11 @@ def _loosen_recommendation(sport, rule, group, base, need, min_samples,
     silence = []
     if drought["gap"]:
         silence.append("%d матчей рынка" % drought["gap"])
+    hours = _num(drought.get("hours"), 0.0)
     if drought["days"] >= 1.0:
         silence.append("%.1f дн." % drought["days"])
+    elif hours >= 1.0:
+        silence.append("%.1f ч." % hours)
     lead = "Правило молчит: %s прошло без сигналов" % (
         " и ".join(silence) or "долго")
     if base["matched"]:
@@ -817,9 +874,14 @@ def _loosen_recommendation(sport, rule, group, base, need, min_samples,
                   "при точности %.0f%% (средняя по рынку %.0f%%)." % (
                       sim["condition_text"], sim["condition_after_text"],
                       sim["matched"], sim["precision"], base["base"]))
-    rec["reason"] = ("%s. %s Это осторожное смягчение, а не отключение "
-                     "правила: точность остаётся в допустимых пределах." % (
-                         lead, detail))
+    caution = ("Это осторожное смягчение, а не отключение правила: "
+               "точность остаётся в допустимых пределах.")
+    if sim.get("relaxed"):
+        caution = ("Это осторожное смягчение, а не отключение правила: "
+                   "точность ниже целевой, но выше средней по рынку — "
+                   "правило снова начнёт давать сигналы.")
+    rec["reason"] = "%s. %s %s" % (lead, detail, caution)
+    rec["precision_relaxed"] = bool(sim.get("relaxed"))
     return rec
 
 
@@ -1136,14 +1198,19 @@ def _recommend_for_rule(sport, rule, group, min_samples, min_precision,
     if not base["kind"]:
         return []
     need = max(MIN_KEPT, int(min_samples or 6))
-    if base["matched"] < need:
+    # Засуха определяется по свежести сигналов, а не по их общему числу:
+    # правило могло сработать достаточно раз в прошлом, но потом замолчать.
+    drought = _drought_stats(base, group, need)
+    if drought:
         # Правило молчит на активном рынке: сначала пробуем осторожно
         # смягчить его, а не отключать. Если безопасного варианта нет,
         # рекомендации не будет — лучше ничего не менять.
         loose = _loosen_recommendation(
-            sport, rule, group, base, need, min_samples, min_precision)
+            sport, rule, group, base, need, min_samples, min_precision,
+            drought=drought)
         if loose:
             return [loose]
+    if base["matched"] < need:
         return []
     target_rule = _target_rule(rule, sport, base)
     result = []

@@ -138,6 +138,11 @@ python -m http.server 8765 --bind 127.0.0.1   # из tools/ui_harness
     обе забьют; у настольного тенниса — победитель и тотал), поля примеров
     (50), порога (55) и партий (3); сохранение работает, снятая отметка вида
     и снятая отметка рынка сохраняются и после перезапуска.
+11. Настройки → карточка «ИИ»: поменяйте модель и ключ, снимите один вид и
+    один рынок, сохраните и вернитесь на экран. Значения остались; интервал
+    опроса, лимит матчей и переключатели нейросети не сбросились. Дождитесь
+    фонового обновления статуса — модель, ключ и выбранные виды не меняются.
+    Автоматически это проверяет `node tools/ui_harness/check_settings.js`.
 
 На 22.10.2026 стенд прошёл эти проверки с 0 ошибок консоли.
 
@@ -146,7 +151,7 @@ python -m http.server 8765 --bind 127.0.0.1   # из tools/ui_harness
 Требуется arm64 Android 7.0+ (или x86_64 эмулятор).
 
 ```powershell
-adb install -r ..\Predictor-1.20.apk
+adb install -r ..\Predictor-1.21.apk
 adb logcat -c
 adb shell am start -n by.betcity.predictor/.MainActivity
 adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
@@ -155,7 +160,7 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 Чек-лист:
 
 01. Приложение запускается, статус-бар скрыт.
-02. Панель показывает версию 1.19, активный вид и число матчей во всех видах.
+02. Панель показывает версию 1.21, активный вид и число матчей во всех видах.
 03. «Проверить» возвращает Betcity: ok и суммарное число матчей; в сводке есть
     `sports` и `by_sport` для нескольких видов.
 04. Переключение всех 6 видов не роняет приложение и не останавливает анализ.
@@ -248,14 +253,14 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 ## 7. Проверка APK
 
 ```powershell
-Copy-Item app\build\outputs\apk\release\app-release.apk ..\Predictor-1.20.apk -Force
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.20.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.20.apk
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Predictor-1.21.apk -Force
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.21.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.21.apk
 ```
 
 Ожидается:
 
-- `versionCode 21`, `versionName 1.20`;
+- `versionCode 22`, `versionName 1.21`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;
@@ -263,13 +268,13 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.20.apk
 - в ZIP есть `assets/www/app.js`, `assets/www/docs.js` и
   `assets/chaquopy/app.imy`;
 - в `app.imy` есть `sports.py` и `rule_advisor.py`, а `engine_api.py`
-  содержит строку `1.20.0` и `score_cache` (Chaquopy 17 пакует исходники,
+  содержит строку `1.21.0` и `score_cache` (Chaquopy 17 пакует исходники,
   не `.pyc`).
 
 Проверка содержимого:
 
 ```powershell
-python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.20.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
+python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.21.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
 ```
 
 ## 8. Что считается неудачей

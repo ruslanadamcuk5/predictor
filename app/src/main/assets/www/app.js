@@ -1043,24 +1043,13 @@ function bindAiMarkets() {
 }
 
 function renderAiSettings(status) {
+  // Живой статус обновляет только бейдж, подсказку и расход квоты.
+  // Поля формы рендерятся из сохранённых настроек (renderSettings):
+  // фоновый опрос не должен перезаписывать выбор пользователя.
   if (status) {
-    state.ai.status = status;
+    state.ai.status = Object.assign({}, state.ai.status || {}, status);
     if (Array.isArray(status.providers) && status.providers.length) {
       state.ai.providers = status.providers;
-    }
-    // Пока пользователь правит настройки, его выбор провайдера не сбиваем
-    // фоновым опросом состояния.
-    if (status.provider && !state.ai.dirty) {
-      state.ai.provider = status.provider;
-    }
-    if (!state.ai.dirty) {
-      if (Array.isArray(status.sports_selected)) {
-        setAiSports(status.sports_selected);
-      }
-      if (status.markets && typeof status.markets === 'object') {
-        state.ai.markets = status.markets;
-        renderAiMarkets();
-      }
     }
   }
   const s = state.ai.status || {};
@@ -1076,36 +1065,6 @@ function renderAiSettings(status) {
       badge.textContent = 'выкл';
       badge.className = 'badge';
     }
-  }
-  const enabled = $('setAiEnabled');
-  if (enabled) enabled.checked = !!s.enabled;
-  const base = $('setAiBaseUrl');
-  if (base && document.activeElement !== base && !state.ai.dirty) {
-    base.value = s.base_url || '';
-  }
-  const model = $('setAiModel');
-  if (model && document.activeElement !== model && !state.ai.dirty) {
-    model.value = s.model || '';
-  }
-  const key = $('setAiKey');
-  if (key && document.activeElement !== key) {
-    key.value = (state.settings && state.settings.ai && state.settings.ai.api_key) || '';
-  }
-  const timeout = $('setAiTimeout');
-  if (timeout) timeout.value = String(num(s.timeout) || 90);
-  const thinking = $('setAiThinking');
-  if (thinking) thinking.checked = s.thinking !== false;
-  const autoPredict = $('setAiAutoPredict');
-  if (autoPredict) autoPredict.checked = !!s.auto_predict;
-  const embed = $('setAiEmbed');
-  if (embed) embed.checked = !!s.embed;
-  const perCycle = $('setAiPerCycle');
-  if (perCycle) perCycle.value = String(num(s.per_cycle) || 0);
-  const perDay = $('setAiPerDay');
-  if (perDay) perDay.value = String(num(s.per_day) || 0);
-  const confidence = $('setAiConfidence');
-  if (confidence) {
-    confidence.value = String(Math.round((num(s.min_confidence) || 0.5) * 100));
   }
   const usage = $('setAiUsage');
   if (usage) {
@@ -1139,30 +1098,31 @@ function renderAiSettings(status) {
     }
   }
   renderAiProviders();
-  renderAiSports();
-  renderAiMarkets();
 }
 
 function collectAiSettings() {
-  const s = JSON.parse(JSON.stringify(state.settings || {}));
-  s.ai = {
-    enabled: $('setAiEnabled') ? $('setAiEnabled').checked : false,
-    provider: state.ai.provider,
-    base_url: $('setAiBaseUrl') ? $('setAiBaseUrl').value.trim() : '',
-    model: $('setAiModel') ? $('setAiModel').value.trim() : '',
-    api_key: $('setAiKey') ? $('setAiKey').value.trim() : '',
-    timeout: Math.max(5, Math.min(180, num($('setAiTimeout').value) || 90)),
-    thinking: $('setAiThinking') ? $('setAiThinking').checked : true,
-    auto_predict: $('setAiAutoPredict') ? $('setAiAutoPredict').checked : false,
-    embed: $('setAiEmbed') ? $('setAiEmbed').checked : false,
-    sports: aiSportIds(),
-    markets: aiMarketsMap(),
-    per_cycle: Math.max(0, Math.min(5, num($('setAiPerCycle').value) || 0)),
-    per_day: Math.max(0, Math.min(1000, num($('setAiPerDay').value) || 0)),
-    min_confidence: Math.max(0.3, Math.min(0.95,
-      (num($('setAiConfidence').value) || 50) / 100)),
+  // Возвращаем только блок ai. Раньше здесь клонировался весь снимок
+  // настроек и через Object.assign перекрывал уже собранные поля
+  // (нейросеть, интервал, лимит матчей), из-за чего они не сохранялись.
+  return {
+    ai: {
+      enabled: $('setAiEnabled') ? $('setAiEnabled').checked : false,
+      provider: state.ai.provider || 'gemini',
+      base_url: $('setAiBaseUrl') ? $('setAiBaseUrl').value.trim() : '',
+      model: $('setAiModel') ? $('setAiModel').value.trim() : '',
+      api_key: $('setAiKey') ? $('setAiKey').value.trim() : '',
+      timeout: Math.max(5, Math.min(180, num($('setAiTimeout').value) || 90)),
+      thinking: $('setAiThinking') ? $('setAiThinking').checked : true,
+      auto_predict: $('setAiAutoPredict') ? $('setAiAutoPredict').checked : false,
+      embed: $('setAiEmbed') ? $('setAiEmbed').checked : false,
+      sports: aiSportIds(),
+      markets: aiMarketsMap(),
+      per_cycle: Math.max(0, Math.min(5, num($('setAiPerCycle').value) || 0)),
+      per_day: Math.max(0, Math.min(1000, num($('setAiPerDay').value) || 0)),
+      min_confidence: Math.max(0.3, Math.min(0.95,
+        (num($('setAiConfidence').value) || 50) / 100)),
+    },
   };
-  return s;
 }
 
 function aiShowModal(title, text, meta) {
@@ -2377,6 +2337,23 @@ function renderSettings(s) {
   renderNnMarkets();
 
   const ai = s.ai || {};
+  state.ai.provider = ai.provider || 'gemini';
+  if ($('setAiEnabled')) $('setAiEnabled').checked = !!ai.enabled;
+  if ($('setAiBaseUrl')) $('setAiBaseUrl').value = ai.base_url || '';
+  if ($('setAiModel')) $('setAiModel').value = ai.model || '';
+  if ($('setAiKey')) $('setAiKey').value = ai.api_key || '';
+  if ($('setAiTimeout')) {
+    $('setAiTimeout').value = String(Math.max(5, Math.min(180, num(ai.timeout) || 90)));
+  }
+  if ($('setAiThinking')) $('setAiThinking').checked = ai.thinking !== false;
+  if ($('setAiAutoPredict')) $('setAiAutoPredict').checked = !!ai.auto_predict;
+  if ($('setAiEmbed')) $('setAiEmbed').checked = !!ai.embed;
+  if ($('setAiPerCycle')) $('setAiPerCycle').value = String(num(ai.per_cycle) || 0);
+  if ($('setAiPerDay')) $('setAiPerDay').value = String(num(ai.per_day) || 0);
+  if ($('setAiConfidence')) {
+    $('setAiConfidence').value =
+      String(Math.round((num(ai.min_confidence) || 0.5) * 100));
+  }
   if (Array.isArray(ai.sports)) {
     setAiSports(ai.sports);
   } else {
@@ -2385,8 +2362,7 @@ function renderSettings(s) {
   state.ai.markets = (ai.markets && typeof ai.markets === 'object')
     ? ai.markets : {};
   renderAiMarkets();
-  const aiEmbed = $('setAiEmbed');
-  if (aiEmbed) aiEmbed.checked = !!ai.embed;
+  renderAiProviders();
 
   $('setVerbose').checked = !!s.debug_verbose;
   $('setBetSize').value = num(s.bet_size_percent) || 2;
@@ -2620,10 +2596,11 @@ function saveSettings() {
       state.ai.dirty = false;
       state.ctor.mode = res.settings.algorithm_mode || state.ctor.mode;
       syncModeUI(state.ctor.mode);
-      renderAiSettings((res.settings || {}).ai
-        ? Object.assign({}, state.ai.status || {},
-                        { provider: (res.settings.ai || {}).provider })
-        : state.ai.status);
+      // Источник правды после сохранения — ответ сервера. Полный рендер
+      // возвращает в поля ровно то, что записалось, включая ИИ и нейросеть.
+      renderSettings(res.settings || {});
+      renderAiSettings(Object.assign({}, state.ai.status || {},
+                                     (res.settings || {}).ai || {}));
       renderUpdateSettings();
       toast('Настройки сохранены', 'ok');
     } else {

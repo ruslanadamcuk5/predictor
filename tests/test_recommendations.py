@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "app", "src", "main", "python"))
 
 import analysis_service  # noqa: E402
 import analyzer  # noqa: E402
+import auto_rules  # noqa: E402
 import rule_advisor  # noqa: E402
 
 PASSED = []
@@ -542,5 +543,138 @@ check("засуха: работающее правило не получает �
       all(item["type"] != "loosen_rule"
           for item in active["recommendations"]),
       active["recommendations"])
+
+# --------------------------------------------------------------------------
+# 8b. Засуха по свежести: правило сработало в прошлом, но замолчало
+# --------------------------------------------------------------------------
+
+def custom_history(rows, prefix="cx"):
+    """История с точным контролем тотала, результата и времени сигнала."""
+    history = {}
+    for index, (total, success, sent_at) in enumerate(rows):
+        match = {
+            "match_id": "%s%02d" % (prefix, index),
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "sport": "table_tennis", "league": "Тест",
+            "date": "19.10 20:30", "start_time": "2026-10-19T20:30",
+            "stat_link": "/x", "is_started": False,
+            "current_score": "0:0", "odds": {},
+        }
+        prediction = {
+            "target": "set1", "kind": "total", "label": "Тотал",
+            "verdict": "ТБ 18.5", "expected_side": "over",
+            "threshold": 18.5, "confidence_val": 0.6,
+        }
+        history["%s%02d" % (prefix, index)] = {
+            "team1": "Игрок А", "team2": "Игрок Б",
+            "date": "19.10.26", "league": "Тест", "sent_at": sent_at,
+            "predictions": [prediction],
+            "set_results": [{
+                "target": "set1", "kind": "total", "success": success,
+                "score": "11:10" if success else "8:7",
+                "total": total, "label": "Тотал", "verdict": "ТБ 18.5",
+            }],
+            "stats": analyzer.make_sample(
+                match, build_stats(total, 18, 20)),
+            "result_checked": True,
+        }
+    return history
+
+
+def total_rule(value, rule_id, op="gte"):
+    return {
+        "id": rule_id, "name": "Средний тотал игрока 1",
+        "enabled": True, "priority": 100,
+        "conditions": {"logic": "and", "conditions": [
+            {"metric": "p.recent.avg_set_total",
+             "args": {"side": "p1", "window": 5},
+             "op": op, "value": value},
+        ]},
+        "action": {"type": "total", "targets": [1], "side": "over",
+                   "threshold": 18.5, "confidence": 0.6},
+    }
+
+
+def loosen_only(history, rule):
+    result = rule_advisor.recommend(
+        history, ["table_tennis"], {"table_tennis": [rule]})
+    return [item for item in result["recommendations"]
+            if item["type"] == "loosen_rule"]
+
+
+# Шесть старых срабатываний, затем рынок жил ещё шесть матчей без сигналов.
+STALE_ROWS = [
+    (23, True, "2026-10-01T12:00:00"), (22, True, "2026-10-02T12:00:00"),
+    (22, True, "2026-10-03T12:00:00"), (22, True, "2026-10-04T12:00:00"),
+    (22, True, "2026-10-05T12:00:00"), (22, False, "2026-10-06T12:00:00"),
+    (20, True, "2026-10-07T12:00:00"), (20, True, "2026-10-08T12:00:00"),
+    (20, True, "2026-10-09T12:00:00"), (20, False, "2026-10-10T12:00:00"),
+    (19, True, "2026-10-11T12:00:00"), (19, False, "2026-10-12T12:00:00"),
+]
+stale_rule = total_rule(21.5, "rule-stale")
+stale_recs = loosen_only(custom_history(STALE_ROWS), stale_rule)
+check("свежесть: правило с историей, но давно молчит — рекомендация есть",
+      len(stale_recs) == 1, stale_recs)
+if stale_recs:
+    stale_rec = stale_recs[0]
+    check("свежесть: срабатываний до правки достаточно",
+          stale_rec["matched_before"] >= 6, stale_rec.get("matched_before"))
+    check("свежесть: тишина измерена матчами рынка",
+          stale_rec.get("silent_market") >= 6, stale_rec.get("silent_market"))
+    check("свежесть: правка возвращает новые срабатывания",
+          stale_rec["matched_after"] > stale_rec["matched_before"],
+          stale_rec.get("matched_after"))
+    check("свежесть: точность после правки не ниже прежней",
+          stale_rec["precision_after"] >= 60.0,
+          stale_rec.get("precision_after"))
+    check("свежесть: застоявшееся правило не отключают",
+          stale_rec["type"] == "loosen_rule"
+          and stale_rec["change_kind"] == "widen", stale_rec)
+
+# Цель недостижима, но сигналы возвращаются с точностью выше среднего по рынку.
+RELAXED_ROWS = [
+    (23, True, "2026-10-01T12:00:00"), (23, True, "2026-10-02T12:00:00"),
+    (23, True, "2026-10-03T12:00:00"), (20, False, "2026-10-04T12:00:00"),
+    (20, False, "2026-10-05T12:00:00"), (20, False, "2026-10-06T12:00:00"),
+    (19, True, "2026-10-07T12:00:00"), (19, True, "2026-10-08T12:00:00"),
+    (19, False, "2026-10-09T12:00:00"), (19, False, "2026-10-10T12:00:00"),
+    (18, False, "2026-10-11T12:00:00"), (18, False, "2026-10-12T12:00:00"),
+]
+relaxed_rule = total_rule(20, "rule-relaxed")
+relaxed_recs = loosen_only(custom_history(RELAXED_ROWS), relaxed_rule)
+check("запасное смягчение: рекомендация есть", len(relaxed_recs) == 1,
+      relaxed_recs)
+if relaxed_recs:
+    relaxed_rec = relaxed_recs[0]
+    check("запасное смягчение: помечено как relaxed",
+          relaxed_rec.get("precision_relaxed") is True, relaxed_rec)
+    check("запасное смягчение: вернуло новые срабатывания",
+          relaxed_rec["matched_after"] > relaxed_rec["matched_before"],
+          relaxed_rec.get("matched_after"))
+    check("запасное смягчение: точность выше средней по рынку",
+          relaxed_rec["precision_after"] > relaxed_rec["base_precision"],
+          (relaxed_rec.get("precision_after"),
+           relaxed_rec.get("base_precision")))
+    check("запасное смягчение: причина это объясняет",
+          "выше средней по рынку" in relaxed_rec["reason"],
+          relaxed_rec.get("reason"))
+
+# Смягчение, которое не добавляет ни одного сигнала, не предлагается.
+NOOP_HISTORY = custom_history(RELAXED_ROWS, prefix="no")
+noop_obs = analyzer.build_observations(NOOP_HISTORY, sport="table_tennis")
+noop_groups = auto_rules._groups(noop_obs, "table_tennis")
+noop_group = noop_groups[("total", "set1")]
+noop_rule = total_rule(100, "rule-noop", op="lte")
+noop_base = rule_advisor._evaluate_rule(
+    noop_rule, noop_group, "table_tennis")
+check("без прироста: правило уже покрывает весь рынок",
+      noop_base["matched"] == len(noop_group),
+      (noop_base["matched"], len(noop_group)))
+check("без прироста: смягчение отклонено",
+      rule_advisor._simulate_loosen(
+          noop_group, noop_base, "table_tennis", 6, 60.0) is None,
+      rule_advisor._simulate_loosen(
+          noop_group, noop_base, "table_tennis", 6, 60.0))
+
 
 print("OK — пройдено проверок: %d" % len(PASSED))

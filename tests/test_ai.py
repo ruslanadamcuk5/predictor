@@ -196,6 +196,35 @@ check("ИИ фильтрует рынки", [item["kind"] for item in preds] == 
 check("ИИ не прогнозирует выключенный вид",
       limited.predict_to_predictions(
           {"match": match, "stats": stats}, "hockey") == [])
+check("ИИ: markets_for оставляет только выбранные рынки",
+      limited.markets_for("football") == ["total"],
+      limited.markets_for("football"))
+check("ИИ: markets_for выключает невыбранный вид",
+      limited.markets_for("hockey") == [],
+      limited.markets_for("hockey"))
+
+# Пустой выбор видов — ИИ не прогнозирует ни один вид (а не все сразу).
+eng.settings.update({"ai": {"sports": [], "markets": {}}})
+empty = ai_assistant.AIAssistant(core.DATA_DIR, eng.settings, None)
+empty.session = FakeSession(json.dumps({
+    "winner": "П1", "winner_confidence": 0.9,
+    "reason": "не должно вызываться"}))
+check("ИИ: пустой выбор отключает все виды",
+      all(empty.markets_for(sport_id) == []
+          for sport_id in ("table_tennis", "football", "hockey")),
+      [empty.markets_for(sport_id)
+       for sport_id in ("table_tennis", "football", "hockey")])
+before_empty = empty.usage_today()
+check("ИИ: при пустом выборе нет прогнозов",
+      empty.predict_to_predictions(
+          {"match": match, "stats": stats}, "football") == [])
+check("ИИ: при пустом выборе нет запроса к модели",
+      empty.usage_today() == before_empty,
+      (before_empty, empty.usage_today()))
+# Возвращаем выбор видов, чтобы следующие проверки работали как раньше.
+eng.settings.update({"ai": {"sports": [
+    "table_tennis", "football", "hockey", "basketball",
+    "volleyball", "tennis"], "markets": {}}})
 check("ИИ помечает встроенное мнение",
       limited.predict_to_predictions(
           {"match": match, "stats": stats, "embed": True}, "football")[0]
@@ -437,6 +466,6 @@ check("таймаут по умолчанию 60", assistant.config()["timeout"]
       assistant.config()["timeout"])
 
 # ------------------------------------------------------------------ версия
-check("версия движка 1.19.0", api.APP_VERSION == "1.20.0", api.APP_VERSION)
+check("версия движка 1.21.0", api.APP_VERSION == "1.21.0", api.APP_VERSION)
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

@@ -30,6 +30,7 @@ OFFLINE = [
     "test_profit.py",
     "test_auto_rules.py",
     "test_recommendations.py",
+    "test_ui_settings.py",
     "test_online_server.py",
     "test_history_server.py",
     "test_release_tool.py",
