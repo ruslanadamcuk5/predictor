@@ -47,6 +47,14 @@ MAX_RECOMMENDATIONS = 20
 MIN_ROI_GAIN = 2.0
 # Нижняя граница EV, ниже которой правило считается убыточным.
 STOP_EV_LOWER = -1.0
+
+# «Засуха» правила: рынок активно прогнозируется, а правило давно молчит.
+# Такое правило могло стать слишком жёстким — его стоит осторожно смягчить,
+# но только если точность остаётся в допустимых пределах.
+DROUGHT_MIN_MARKET = 8
+DROUGHT_MIN_GAP = 6
+DROUGHT_MIN_DAYS = 1.0
+LOOSEN_SLACK = 3.0
 # Сколько правил держать в рабочем портфеле одновременно.
 MAX_PORTFOLIO = 8
 # Максимальная суммарная экспозиция портфеля, % банка.
@@ -65,6 +73,7 @@ TYPE_TITLES = {
     "remove_condition": "Убрать условие",
     "disable_rule": "Отключить правило",
     "adjust_confidence": "Поправить уверенность",
+    "loosen_rule": "Смягчить правило",
 }
 
 SEVERITY = {
@@ -73,6 +82,7 @@ SEVERITY = {
     "add_odds_floor": "critical",
     "remove_condition": "info",
     "adjust_confidence": "info",
+    "loosen_rule": "warn",
 }
 
 SEVERITY_ORDER = {"critical": 0, "warn": 1, "info": 2}
@@ -536,6 +546,283 @@ def _simulate_remove(group, base, sport, min_precision):
     return best
 
 
+# --------------------------------------------------------------------------
+# «Засуха»: правило давно не срабатывает, хотя рынок активен
+# --------------------------------------------------------------------------
+
+def _parse_stamp(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(
+            text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _drought_stats(base, group, need):
+    """Признаки засухи: правило молчит, хотя рынок прогнозируется.
+
+    Возвращает число матчей рынка, прошедших без срабатывания, и сколько
+    дней длится тишина. ``None`` — правило работает нормально.
+    """
+    if base.get("skip") or base.get("matched", 0) >= need:
+        return None
+    if len(group) < DROUGHT_MIN_MARKET:
+        return None
+    matched = base.get("matched_rows") or []
+    if not matched:
+        last_at = ""
+        gap = len(group)
+    else:
+        last_at = max(str(item.get("sent_at") or "") for item in matched)
+        gap = sum(1 for item in group
+                  if str(item.get("sent_at") or "") > last_at)
+    days = 0.0
+    start = _parse_stamp(last_at) if last_at else None
+    if start:
+        stamps = [stamp for stamp in
+                  (_parse_stamp(item.get("sent_at")) for item in group)
+                  if stamp]
+        if stamps:
+            end = max(stamps)
+            if end > start:
+                days = (end - start).total_seconds() / 86400.0
+    if gap < DROUGHT_MIN_GAP and days < DROUGHT_MIN_DAYS:
+        return None
+    return {
+        "gap": int(gap),
+        "days": round(days, 1),
+        "last_at": last_at,
+        "market": len(group),
+    }
+
+
+def _loosen_step(condition, value):
+    """Осторожный шаг для числового порога, с учётом единиц метрики."""
+    metric_id = str(condition.get("metric") or "")
+    definition = ce.METRIC_MAP.get(metric_id) or {}
+    unit = str(definition.get("unit") or "")
+    if unit == "%":
+        return 2.0
+    if unit == "партий":
+        return 0.5
+    if unit == "очк.":
+        return 1.0
+    return 1.0 if abs(float(value)) >= 20 else 0.5
+
+
+def _rounded_value(value, original):
+    number = round(float(value), 1)
+    if isinstance(original, int) and not isinstance(original, bool):
+        return int(round(number))
+    return number
+
+
+def _loosen_candidates(conditions, sport):
+    """Варианты смягчения: снять одно условие или расширить порог."""
+    result = []
+    if len(conditions) > 1:
+        for index, condition in enumerate(conditions):
+            rest = list(conditions[:index]) + list(conditions[index + 1:])
+            result.append({
+                "kind": "remove",
+                "condition": condition,
+                "updated": None,
+                "next": rest,
+                "distance": 2.0,
+                "key": condition_key(condition),
+                "text": "",
+                "change_text": "снять условие «%s»" % ce.describe_condition(
+                    condition, sport=sport),
+            })
+    for index, condition in enumerate(conditions):
+        if not isinstance(condition, dict) or "metric" not in condition:
+            continue
+        metric_id = str(condition.get("metric") or "")
+        if metric_id.startswith("odds.") or condition.get("value_metric"):
+            # Коэффициентами управляет отдельная рекомендация add_odds_floor:
+            # механическое смягчение порога кэфа обесценило бы отбор.
+            continue
+        op = str(condition.get("op") or "").lower()
+        value = condition.get("value")
+        if op not in ("gt", "gte", "lt", "lte"):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        step = _loosen_step(condition, value)
+        for factor in (1, 2, 3):
+            delta = step * factor
+            if op in ("lt", "lte"):
+                next_value = float(value) + delta
+            else:
+                next_value = float(value) - delta
+                if value >= 0:
+                    next_value = max(0.0, next_value)
+            next_value = _rounded_value(next_value, value)
+            if next_value == value:
+                continue
+            updated = json.loads(json.dumps(condition, ensure_ascii=False))
+            updated["value"] = next_value
+            next_conditions = list(conditions)
+            next_conditions[index] = updated
+            result.append({
+                "kind": "widen",
+                "condition": condition,
+                "updated": updated,
+                "next": next_conditions,
+                "distance": 0.5 * factor,
+                "key": condition_key(updated),
+                "text": ce.describe_condition(updated, sport=sport),
+                "change_text": "смягчить «%s» до «%s»" % (
+                    ce.describe_condition(condition, sport=sport),
+                    ce.describe_condition(updated, sport=sport)),
+            })
+    return result
+
+
+def _simulate_loosen(group, base, sport, need, min_precision):
+    """Подбирает самое осторожное смягчение, возвращающее правилу сигналы.
+
+    Точность после правки не должна упасть ниже цели анализа (с допуском
+    ``LOOSEN_SLACK``) и не должна стать хуже средней по рынку. Из прошедших
+    проверку вариантов выбирается самый мягкий: сначала минимальный сдвиг
+    порога, и только потом — больший охват.
+    """
+    condition_group = base["condition_group"]
+    if str(condition_group.get("logic") or "and").lower() != "and":
+        return None
+    conditions = list(condition_group.get("conditions") or [])
+    if not conditions:
+        return None
+    target = max(float(min_precision or 60.0) - LOOSEN_SLACK,
+                 _num(base.get("base"), 0.0) + 1.0)
+    valid = []
+    seen = set()
+    for candidate in _loosen_candidates(conditions, sport):
+        if candidate["key"] in seen:
+            continue
+        seen.add(candidate["key"])
+        next_group = {"logic": "and", "conditions": candidate["next"]}
+        matched = auto_rules._matched_group(group, next_group)
+        if len(matched) < need:
+            continue
+        wins = sum(1 for item in matched if item.get("success"))
+        precision = _pct(wins, len(matched))
+        if precision < target:
+            continue
+        money = _money(matched)
+        if money.get("odds_available") and                 _num(money.get("roi"), 0.0) < -2.0:
+            continue
+        valid.append({
+            "group": next_group,
+            "kind": candidate["kind"],
+            "condition": candidate["condition"],
+            "condition_after": candidate["updated"],
+            "condition_text": ce.describe_condition(
+                candidate["condition"], sport=sport),
+            "condition_after_text": candidate["text"],
+            "change_text": candidate["change_text"],
+            "key": candidate["key"],
+            "matched": len(matched),
+            "wins": wins,
+            "losses": len(matched) - wins,
+            "precision": precision,
+            "money": money,
+            "validation": profit.validation(
+                profit.rows_for_observations(matched)),
+            "distance": candidate["distance"],
+            "examples": _examples(matched, True),
+        })
+    if not valid:
+        return None
+    best_precision = max(item["precision"] for item in valid)
+    # Держим точность в пределах 1 п.п. от лучшего варианта: это и есть
+    # «золотая середина» — сигналы возвращаются без потери качества.
+    finalists = [item for item in valid
+                 if item["precision"] >= best_precision - 1.0]
+    finalists.sort(key=lambda item: (
+        item["distance"], -item["precision"], -item["matched"]))
+    best = finalists[0]
+    best["score"] = round(
+        best["precision"] + min(best["matched"], need) * 0.5 -
+        best["distance"] * 0.1, 2)
+    return best
+
+
+def _loosen_recommendation(sport, rule, group, base, need, min_samples,
+                           min_precision):
+    """Рекомендация «смягчить правило», если оно давно не срабатывает."""
+    drought = _drought_stats(base, group, need)
+    if not drought:
+        return None
+    sim = _simulate_loosen(group, base, sport, need, min_precision)
+    if not sim:
+        return None
+    target_rule = _target_rule(rule, sport, base)
+    rec = _base_rec(sport, rule, "loosen_rule", base, target_rule)
+    rec["id"] = _rec_id(sport, rule.get("id"), "loosen_rule",
+                        sim["condition"], extra=sim["key"])
+    rec["patch"] = {"conditions": sim["group"]}
+    rec["condition"] = sim["condition"]
+    rec["condition_after"] = sim["condition_after"]
+    rec["condition_text"] = (sim["condition_after_text"] or
+                             sim["condition_text"])
+    rec["change_kind"] = sim["kind"]
+    rec["change_text"] = sim["change_text"]
+    rec["silent_market"] = drought["gap"]
+    rec["silent_days"] = drought["days"]
+    rec["last_match_at"] = drought["last_at"]
+    rec["matched_after"] = sim["matched"]
+    rec["wins_after"] = sim["wins"]
+    rec["losses_after"] = sim["losses"]
+    rec["precision_after"] = sim["precision"]
+    rec["added_matches"] = sim["matched"] - base["matched"]
+    rec["added_wins"] = sim["wins"] - base["wins"]
+    rec["added_losses"] = sim["losses"] - base["losses"]
+    rec["gain"] = round(sim["precision"] - base["precision"], 1)
+    rec["coverage_after"] = _pct(sim["matched"], max(1, base["group_size"]))
+    rec["value_score"] = sim["score"]
+    rec["examples"] = sim["examples"]
+    rec.update(_sim_summary(sim))
+    before_money = base.get("money") or {}
+    if rec.get("roi_after") is not None and             before_money.get("roi") is not None:
+        rec["roi_gain"] = round(rec["roi_after"] -
+                                before_money["roi"], 1)
+    if rec.get("profit_after") is not None:
+        rec["profit_gain"] = round(
+            _num(rec["profit_after"], 0.0) -
+            _num(before_money.get("profit"), 0.0), 2)
+    silence = []
+    if drought["gap"]:
+        silence.append("%d матчей рынка" % drought["gap"])
+    if drought["days"] >= 1.0:
+        silence.append("%.1f дн." % drought["days"])
+    lead = "Правило молчит: %s прошло без сигналов" % (
+        " и ".join(silence) or "долго")
+    if base["matched"]:
+        lead += " (%d срабатываний на %d наблюдениях рынка)" % (
+            base["matched"], base["group_size"])
+    else:
+        lead += " (ни одного срабатывания на %d наблюдениях рынка)" % (
+            base["group_size"])
+    if sim["kind"] == "remove":
+        detail = ("Условие «%s» отсекает все матчи. Без него правило даст "
+                  "%d сигналов при точности %.0f%% (средняя по рынку "
+                  "%.0f%%)." % (sim["condition_text"], sim["matched"],
+                                sim["precision"], base["base"]))
+    else:
+        detail = ("Порог «%s» расширен до «%s»: срабатываний станет %d "
+                  "при точности %.0f%% (средняя по рынку %.0f%%)." % (
+                      sim["condition_text"], sim["condition_after_text"],
+                      sim["matched"], sim["precision"], base["base"]))
+    rec["reason"] = ("%s. %s Это осторожное смягчение, а не отключение "
+                     "правила: точность остаётся в допустимых пределах." % (
+                         lead, detail))
+    return rec
+
+
 def _rec_id(sport, rule_id, rec_type, condition=None, extra=""):
     raw = "|".join([
         sport, str(rule_id or ""), rec_type,
@@ -848,7 +1135,15 @@ def _recommend_for_rule(sport, rule, group, min_samples, min_precision,
         base = _evaluate_rule(rule, group, sport)
     if not base["kind"]:
         return []
-    if base["matched"] < max(MIN_KEPT, int(min_samples or 6)):
+    need = max(MIN_KEPT, int(min_samples or 6))
+    if base["matched"] < need:
+        # Правило молчит на активном рынке: сначала пробуем осторожно
+        # смягчить его, а не отключать. Если безопасного варианта нет,
+        # рекомендации не будет — лучше ничего не менять.
+        loose = _loosen_recommendation(
+            sport, rule, group, base, need, min_samples, min_precision)
+        if loose:
+            return [loose]
         return []
     target_rule = _target_rule(rule, sport, base)
     result = []
@@ -1019,6 +1314,22 @@ def _is_resolved(rec, rule):
     elif rec["type"] == "disable_rule":
         if not rule.get("enabled", True):
             return True, "Правило уже выключено"
+    elif rec["type"] == "loosen_rule":
+        if not rule.get("enabled", True):
+            return True, "Правило выключено"
+        if _loosen_applied(rule, rec):
+            return True, "Правило уже смягчено"
+        condition = rec.get("condition")
+        if not isinstance(condition, dict):
+            return False, ""
+        same = [item for item in _flatten(rule.get("conditions"))
+                if _same_metric(item, condition)]
+        if not same:
+            return True, "Условие уже убрано"
+        if rec.get("change_kind") == "widen" and any(
+                _num(item.get("value"), None) !=
+                _num(condition.get("value"), None) for item in same):
+            return True, "Порог уже смягчён"
     elif rec["type"] == "adjust_confidence":
         action = rule.get("action") or {}
         current = _num(action.get("confidence"))
@@ -1027,6 +1338,44 @@ def _is_resolved(rec, rule):
         if abs(current - target) <= 0.011:
             return True, "Уверенность уже исправлена"
     return False, ""
+
+
+def _same_metric(left, right):
+    """Условия об одной метрике с одинаковыми аргументами."""
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    if str(left.get("metric") or "") != str(right.get("metric") or ""):
+        return False
+    return json.dumps(left.get("args") or {}, sort_keys=True) == \
+        json.dumps(right.get("args") or {}, sort_keys=True)
+
+
+def _loosen_value_same(left, right):
+    if left == right:
+        return True
+    left_num = _num(left, None)
+    right_num = _num(right, None)
+    return (left_num is not None and right_num is not None and
+            abs(left_num - right_num) < 1e-9)
+
+
+def _loosen_applied(rule, rec):
+    """Совпадает ли правило с готовым смягчённым вариантом рекомендации."""
+    patch = (rec.get("patch") or {}).get("conditions")
+    if not isinstance(patch, dict):
+        return False
+    current = _flatten(rule.get("conditions"))
+    wanted = _flatten(patch)
+    if len(current) != len(wanted):
+        return False
+    for left, right in zip(current, wanted):
+        if not _same_metric(left, right):
+            return False
+        if str(left.get("op") or "") != str(right.get("op") or ""):
+            return False
+        if not _loosen_value_same(left.get("value"), right.get("value")):
+            return False
+    return True
 
 
 def _dismissed(state, rec_id, now):

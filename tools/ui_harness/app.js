@@ -2456,6 +2456,22 @@ function renderSettings(s) {
   if ($('setOnlineVerify')) {
     $('setOnlineVerify').checked = online.verify_ssl !== false;
   }
+  if ($('setOnlineSync')) {
+    $('setOnlineSync').checked = online.sync_enabled !== false;
+  }
+  if ($('setOnlineSyncInterval')) {
+    $('setOnlineSyncInterval').value =
+      String(Math.max(5, Math.min(720, num(online.sync_interval_min) || 15)));
+  }
+  const syncHint = $('setOnlineSyncHint');
+  if (syncHint) {
+    const parts = [];
+    if (online.last_sync) parts.push('Последняя отправка: ' + online.last_sync);
+    if (online.last_sync_summary) parts.push(online.last_sync_summary);
+    if (online.last_sync_error) parts.push('Ошибка: ' + online.last_sync_error);
+    syncHint.textContent = parts.join(' · ');
+    syncHint.className = 'auto-hint' + (online.last_sync_error ? ' warn' : '');
+  }
   const onlineHint = $('setOnlineHint');
   if (onlineHint) {
     const parts = [];
@@ -2577,6 +2593,10 @@ function collectSettings() {
       ? $('setOnlineFallback').checked : true,
     verify_ssl: $('setOnlineVerify')
       ? $('setOnlineVerify').checked : true,
+    sync_enabled: $('setOnlineSync')
+      ? $('setOnlineSync').checked : true,
+    sync_interval_min: Math.max(5, Math.min(720,
+      ($('setOnlineSyncInterval') ? num($('setOnlineSyncInterval').value) : 15) || 15)),
   });
 
   s.updates = Object.assign({}, s.updates || {}, {
@@ -2965,6 +2985,10 @@ function bind() {
   if (onlineSettings) onlineSettings.addEventListener('click', () => navigate('settings'));
   const settingsOnlineTest = $('btnOnlineTestSettings');
   if (settingsOnlineTest) settingsOnlineTest.addEventListener('click', testOnlineSettings);
+  const syncNow = $('btnSyncNow');
+  if (syncNow) syncNow.addEventListener('click', syncHistoryNow);
+  const openCabinetBtn = $('btnOpenCabinet');
+  if (openCabinetBtn) openCabinetBtn.addEventListener('click', openCabinet);
 
   const updateCheck = $('btnUpdateCheck');
   if (updateCheck) updateCheck.addEventListener('click', () => {
@@ -4099,6 +4123,36 @@ function fmtShare(value) {
   return Math.round(num(value)) + '%';
 }
 
+function anHas(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function anSigned(value, suffix) {
+  if (!anHas(value)) return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return (n > 0 ? '+' : '') + (Math.round(n * 10) / 10) +
+    (suffix || '');
+}
+
+function anPct(value) {
+  if (!anHas(value)) return '—';
+  return (Math.round(Number(value) * 10) / 10) + '%';
+}
+
+function anTone(value) {
+  if (!anHas(value)) return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return '';
+  return n > 0 ? 'ok' : 'bad';
+}
+
+function anSetTone(id, value) {
+  const el = $(id);
+  if (!el) return;
+  el.className = 'kpi-val' + (anTone(value) ? ' ' + anTone(value) : '');
+}
+
 /* ---------- автоматические правила ---------- */
 
 function autoSport() {
@@ -4494,6 +4548,7 @@ function renderRuleReviews(info) {
       </div>
       <div class="an-bar"><span class="${item.verdict === 'keep' ? 'ok' : 'bad'}" style="width:${width}%"></span></div>
       <div class="an-meta">точность ${num(item.precision)}% · средняя по рынку ${num(item.base_precision)}% · сработало ${num(item.matched)}${skipNote} · уверенность ${Math.round(num(item.confidence) * 100)}%</div>
+      ${(item.odds_n || anHas(item.roi)) ? `<div class="an-meta">ROI <b class="${anTone(item.roi)}">${anSigned(item.roi, '%')}</b> · EV ${anSigned(item.ev, '%')} · нижняя ${anSigned(item.ev_lower, '%')} · прибыль ${anSigned(item.profit, '')} ед. · кэф ${anHas(item.avg_odds) ? Number(item.avg_odds).toFixed(2) : '—'} · ставка ${anHas(item.stake_pct) ? num(item.stake_pct).toFixed(2) + '%' : '—'}</div>` : ''}
       <div class="an-meta">${esc(item.conditions_text || 'Условий нет — правило проверяет весь рынок')}</div>
       <div class="an-reco">${esc(item.suggestion || '')}</div>
       ${button ? `<div class="an-actions">${button}</div>` : ''}
@@ -4501,18 +4556,84 @@ function renderRuleReviews(info) {
   }).join('');
 }
 
+const PORTFOLIO_STATUS = {
+  core: ['ядро', 'ok'],
+  watch: ['наблюдение', 'warn'],
+  fragile: ['хрупкое', 'bad'],
+  no_odds: ['нет кэфов', 'gray'],
+  filter: ['фильтр', 'gray'],
+  drop: ['убрать', 'bad'],
+};
+
+function renderPortfolio(info) {
+  const data = info || {};
+  const box = $('anPortfolio');
+  if (!box) return;
+  const rules = data.rules || [];
+  const core = (data.core || []).filter(item => num(item.stake_pct) > 0);
+  const badge = $('anPortfolioBadge');
+  if (badge) {
+    badge.textContent = String(core.length);
+    badge.className = 'badge ' + (core.length ? 'ok' : 'gray');
+  }
+  const hint = $('anPortfolioHint');
+  if (hint) {
+    hint.textContent = data.hint || '';
+    hint.className = 'auto-hint' + (core.length ? '' : ' warn');
+  }
+  if (!rules.length) {
+    box.innerHTML = '<div class="empty">Пока нет включённых правил: ' +
+      'портфель появится, когда правила накопят историю с коэффициентами.</div>';
+    return;
+  }
+  const summary = '<div class="an-meta">Банк ' +
+    num(data.bankroll).toLocaleString('ru-RU') + ' · суммарно ' +
+    num(data.total_stake_pct).toFixed(2) + '% (' +
+    num(data.total_stake_amount).toFixed(2) + ' ед.) · лимит ' +
+    num(data.budget_pct).toFixed(0) + '% · ожидание ' +
+    anSigned(data.expected_per_bet, ' ед.') + ' на ставку</div>';
+  const rows = rules.map(item => {
+    const status = PORTFOLIO_STATUS[item.status] || [item.status, 'gray'];
+    const stake = num(item.stake_pct) > 0
+      ? num(item.stake_pct).toFixed(2) + '% · ' +
+        num(item.stake_amount).toFixed(2) + ' ед.'
+      : '—';
+    return `<div class="an-row">
+      <div class="an-row-head">
+        <div class="an-title">${esc(item.rule_name || 'Правило')}</div>
+        <span class="badge ${status[1]}">${esc(status[0])}</span>
+      </div>
+      <div class="an-meta">${sportBadge(item.sport)} · ${esc(item.market || '')}
+        ${esc(item.target || '')} · сработало ${num(item.matched)} ·
+        точность ${anPct(item.precision)} · кэф ${anHas(item.avg_odds)
+          ? Number(item.avg_odds).toFixed(2) : '—'}</div>
+      <div class="an-meta">ROI <b class="${anTone(item.roi)}">${anSigned(item.roi, '%')}</b>
+        · EV ${anSigned(item.ev, '%')} (нижняя ${anSigned(item.ev_lower, '%')})
+        · прибыль ${anSigned(item.profit, '')} ед.
+        · просадка ${anHas(item.drawdown) ? num(item.drawdown).toFixed(2) : '—'}
+        · ставка <b>${stake}</b>
+        · ожидание ${anSigned(item.expected, ' ед.')}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = summary + rows;
+}
+
 const ADVISOR_TONE = {
   disable_rule: 'bad',
   add_condition: 'warn',
+  add_odds_floor: 'warn',
   remove_condition: 'ok',
   adjust_confidence: 'warn',
+  loosen_rule: 'warn',
 };
 
 const ADVISOR_BUTTON = {
   add_condition: 'Добавить условие',
+  add_odds_floor: 'Поднять коэффициент',
   remove_condition: 'Убрать условие',
   disable_rule: 'Отключить правило',
   adjust_confidence: 'Исправить уверенность',
+  loosen_rule: 'Смягчить правило',
 };
 
 function advisorRule(rec) {
@@ -4526,6 +4647,10 @@ function advisorHeadline(rec) {
     return 'Добавить условие «' + (rec.condition_text || 'условие') +
       '» в правило «' + rule + '»';
   }
+  if (rec.type === 'add_odds_floor') {
+    return 'Поднять минимальный коэффициент в правиле «' + rule +
+      '» до ' + (rec.condition_text || 'порога') ;
+  }
   if (rec.type === 'remove_condition') {
     return 'Убрать условие «' + (rec.condition_text || 'условие') +
       '» из правила «' + rule + '»';
@@ -4535,6 +4660,10 @@ function advisorHeadline(rec) {
   }
   if (rec.type === 'adjust_confidence') {
     return 'Исправить уверенность правила «' + rule + '»';
+  }
+  if (rec.type === 'loosen_rule') {
+    return 'Смягчить правило «' + rule + '»: ' +
+      (rec.change_text || 'осторожно ослабить условия');
   }
   return (rec.type_title || 'Правка правила') + ' «' + rule + '»';
 }
@@ -4575,11 +4704,36 @@ function renderAdvisor(info) {
     const before = num(rec.precision_before);
     const after = rec.precision_after === undefined || rec.precision_after === null
       ? null : num(rec.precision_after);
-    const metrics = ['точность ' + before + '%' +
-      (after === null ? '' : ' → ' + after + '%')];
-    if (rec.matched_before) metrics.push('срабатываний ' + num(rec.matched_before));
-    if (rec.matched_after) metrics.push('останется ' + num(rec.matched_after));
-    if (rec.removed_losses) metrics.push('убрано неудач ' + num(rec.removed_losses));
+    let metrics;
+    if (rec.type === 'loosen_rule') {
+      metrics = ['точность после ' + num(rec.precision_after) + '%' +
+        ' (по рынку ' + num(rec.base_precision) + '%)'];
+      metrics.push('срабатываний ' + num(rec.matched_before) + ' → ' +
+        num(rec.matched_after));
+      if (num(rec.silent_market)) {
+        metrics.push('без сигналов ' + num(rec.silent_market) + ' матчей');
+      }
+      if (num(rec.silent_days)) metrics.push(num(rec.silent_days) + ' дн.');
+    } else {
+      metrics = ['точность ' + before + '%' +
+        (after === null ? '' : ' → ' + after + '%')];
+      if (rec.matched_before) metrics.push('срабатываний ' + num(rec.matched_before));
+      if (rec.matched_after) metrics.push('останется ' + num(rec.matched_after));
+      if (rec.removed_losses) metrics.push('убрано неудач ' + num(rec.removed_losses));
+    }
+    const hasMoney = anHas(rec.roi_before) || anHas(rec.roi_after);
+    if (hasMoney) {
+      metrics.push('ROI ' + anSigned(rec.roi_before, '%') + ' → ' +
+        anSigned(rec.roi_after, '%'));
+      metrics.push('EV ' + anSigned(rec.ev_before, '%') + ' → ' +
+        anSigned(rec.ev_after, '%'));
+      if (anHas(rec.avg_odds_after)) {
+        metrics.push('кэф ' + Number(rec.avg_odds_after).toFixed(2));
+      }
+      if (anHas(rec.profit_after)) {
+        metrics.push('прибыль ' + anSigned(rec.profit_after, ' ед.'));
+      }
+    }
     const target = rec.target_rule || {};
     const meta = [];
     meta.push(sportBadge(rec.sport));
@@ -4672,6 +4826,9 @@ function renderOnlineStatus() {
     const parts = [];
     if (cfg.last_ok) parts.push('Последняя успешная связь: ' + cfg.last_ok);
     if (cfg.last_error) parts.push('Последняя ошибка: ' + cfg.last_error);
+    if (cfg.last_sync) parts.push('история отправлена: ' + cfg.last_sync +
+      (cfg.last_sync_summary ? ' (' + cfg.last_sync_summary + ')' : ''));
+    if (cfg.last_sync_error) parts.push('история: ' + cfg.last_sync_error);
     status.textContent = parts.join(' · ');
     status.className = 'auto-hint' + (cfg.last_error ? ' warn' : '');
   }
@@ -4750,6 +4907,40 @@ function testOnlineSettings() {
   }
 }
 
+function syncHistoryNow() {
+  loader(true);
+  try {
+    const res = call('syncHistory', JSON.stringify({ action: 'now' }));
+    if (res && res.ok) {
+      const summary = res.message || 'история отправлена';
+      toast('Веб-кабинет обновлён: ' + summary, 'ok');
+      if (res.sync && state.settings) {
+        // Не смешиваем статус синхронизации с настройками онлайн-режима:
+        // поле enabled у них означает разное.
+        state.settings.online = Object.assign({}, state.settings.online || {}, {
+          last_sync: res.sync.last_sync || '',
+          last_sync_error: res.sync.last_error || '',
+          last_sync_summary: res.sync.last_summary || '',
+        });
+      }
+    } else {
+      toast((res && res.error) || 'Не удалось отправить историю', 'error');
+    }
+    renderSettings(state.settings || {});
+    renderOnlineStatus();
+  } finally {
+    loader(false);
+  }
+}
+
+function openCabinet() {
+  const url = onlineBaseUrl();
+  if (bridge && typeof bridge.openUrl === 'function') {
+    if (bridge.openUrl(url)) return;
+  }
+  window.open(url, '_blank');
+}
+
 function testOnlineFromAnalyzer() {
   loader(true);
   try {
@@ -4825,6 +5016,22 @@ function renderAnalyzer() {
   $('anWins').textContent = num(obs.wins);
   $('anLosses').textContent = num(obs.losses);
   $('anCoverage').textContent = num(obs.with_stats);
+  const money = data.money || {};
+  const roiEl = $('anRoi');
+  const evEl = $('anEv');
+  const profitEl = $('anProfit');
+  const oddsEl = $('anAvgOdds');
+  if (roiEl) roiEl.textContent = anSigned(money.roi, '%');
+  if (evEl) {
+    evEl.textContent = anSigned(money.ev, '%') +
+      (anHas(money.ev_lower) ? ' / ' + anSigned(money.ev_lower, '%') : '');
+  }
+  if (profitEl) profitEl.textContent = anSigned(money.profit, '');
+  if (oddsEl) oddsEl.textContent = anHas(money.avg_odds)
+    ? Number(money.avg_odds).toFixed(2) : '—';
+  anSetTone('anRoi', money.roi);
+  anSetTone('anEv', money.ev_lower);
+  anSetTone('anProfit', money.profit);
   const options = data.options || {};
   const selected = Array.isArray(options.sports) && options.sports.length
     ? options.sports : (options.sport ? [options.sport] : []);
@@ -4852,6 +5059,7 @@ function renderAnalyzer() {
   renderAnCombos(combos);
 
   renderAnMeans(data.means || []);
+  renderPortfolio(data.portfolio || {});
   renderAdvisor(data.recommendations || {});
   renderRuleReviews(data.rule_reviews || {});
   updateAnalyzerSportUI();

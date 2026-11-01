@@ -146,7 +146,7 @@ check("versionName совпадает с APP_VERSION",
 check("SERVER_VERSION совпадает с APP_VERSION",
       re.search(r'SERVER_VERSION = "([^"]+)"', server).group(1) == name + ".0", name)
 
-print("=== 9. Точность 1.19: калибровка, пороги и лимит прогнозов ===")
+print("=== 9. Точность 1.20: калибровка, пороги и лимит прогнозов ===")
 filters = core.BotSettings.DEFAULTS["general_filters"]
 check("порог сильных моделей поднят", filters["min_strong"] == 2, filters)
 check("порог согласия поднят", filters["min_agreement"] == 0.55, filters)

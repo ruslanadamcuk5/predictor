@@ -101,23 +101,23 @@ Live-линия всех видов: команды, счёт, коэффици�
 
 | Параметр | Значение |
 |---|---|
-| Версия | 1.19 |
-| `versionCode` | 20 |
-| `APP_VERSION` | 1.19.0 |
-| `SERVER_VERSION` | 1.19.0 |
-| APK | `../Predictor-1.19.apk` |
+| Версия | 1.20 |
+| `versionCode` | 21 |
+| `APP_VERSION` | 1.20.0 |
+| `SERVER_VERSION` | 1.20.0 |
+| APK | `../Predictor-1.20.apk` |
 | minSdk | 24 (Android 7.0) |
 | targetSdk | 34 |
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
-| Размер APK | 40 256 152 байт (38,4 МБ) |
-| SHA-256 | `7695088ba8b3acb8b883ff18e71f85d380b22f18dec6464285416ee1fdbb8512` |
+| Размер APK | 38 951 214 байт (37,1 МБ) |
+| SHA-256 | `3efca721d908be69763f86b1243064ea16fc05e2e2ec5e131c4dd5d220c78086` |
 
-Состояние на 31.10.2026: офлайн-регрессии (20 наборов), `test_engine_core.py`
+Состояние на 01.11.2026: офлайн-регрессии (20 наборов), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
-`test_recommendations.py` (52), `test_history_server.py` (82),
+`test_recommendations.py` (68), `test_history_server.py` (82),
 `test_online_server.py` (67) и `test_release_tool.py` (20) проходят.
-APK 1.19 собран (Chaquopy 17.1.0,
+APK 1.20 собран (Chaquopy 17.1.0,
 Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,
 и проверен `aapt2`/`apksigner`. Онлайн-сервис развёрнут на
 `https://predictor.alwaysdata.net` (аккаунт `predictor`, сайт PHP/static +

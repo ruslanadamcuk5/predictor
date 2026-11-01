@@ -4624,6 +4624,7 @@ const ADVISOR_TONE = {
   add_odds_floor: 'warn',
   remove_condition: 'ok',
   adjust_confidence: 'warn',
+  loosen_rule: 'warn',
 };
 
 const ADVISOR_BUTTON = {
@@ -4632,6 +4633,7 @@ const ADVISOR_BUTTON = {
   remove_condition: 'Убрать условие',
   disable_rule: 'Отключить правило',
   adjust_confidence: 'Исправить уверенность',
+  loosen_rule: 'Смягчить правило',
 };
 
 function advisorRule(rec) {
@@ -4658,6 +4660,10 @@ function advisorHeadline(rec) {
   }
   if (rec.type === 'adjust_confidence') {
     return 'Исправить уверенность правила «' + rule + '»';
+  }
+  if (rec.type === 'loosen_rule') {
+    return 'Смягчить правило «' + rule + '»: ' +
+      (rec.change_text || 'осторожно ослабить условия');
   }
   return (rec.type_title || 'Правка правила') + ' «' + rule + '»';
 }
@@ -4698,11 +4704,23 @@ function renderAdvisor(info) {
     const before = num(rec.precision_before);
     const after = rec.precision_after === undefined || rec.precision_after === null
       ? null : num(rec.precision_after);
-    const metrics = ['точность ' + before + '%' +
-      (after === null ? '' : ' → ' + after + '%')];
-    if (rec.matched_before) metrics.push('срабатываний ' + num(rec.matched_before));
-    if (rec.matched_after) metrics.push('останется ' + num(rec.matched_after));
-    if (rec.removed_losses) metrics.push('убрано неудач ' + num(rec.removed_losses));
+    let metrics;
+    if (rec.type === 'loosen_rule') {
+      metrics = ['точность после ' + num(rec.precision_after) + '%' +
+        ' (по рынку ' + num(rec.base_precision) + '%)'];
+      metrics.push('срабатываний ' + num(rec.matched_before) + ' → ' +
+        num(rec.matched_after));
+      if (num(rec.silent_market)) {
+        metrics.push('без сигналов ' + num(rec.silent_market) + ' матчей');
+      }
+      if (num(rec.silent_days)) metrics.push(num(rec.silent_days) + ' дн.');
+    } else {
+      metrics = ['точность ' + before + '%' +
+        (after === null ? '' : ' → ' + after + '%')];
+      if (rec.matched_before) metrics.push('срабатываний ' + num(rec.matched_before));
+      if (rec.matched_after) metrics.push('останется ' + num(rec.matched_after));
+      if (rec.removed_losses) metrics.push('убрано неудач ' + num(rec.removed_losses));
+    }
     const hasMoney = anHas(rec.roi_before) || anHas(rec.roi_after);
     if (hasMoney) {
       metrics.push('ROI ' + anSigned(rec.roi_before, '%') + ' → ' +

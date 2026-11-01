@@ -1346,7 +1346,8 @@ const REC_STATUS = {open:"Открыта", applied:"Применена", resolve
 const REC_CLASS = {open:"brand", applied:"ok", resolved:"gray", dismissed:"warn"};
 const REC_ACTION = {add_condition:"Добавить условие", add_odds_floor:"Поднять коэффициент",
   remove_condition:"Убрать условие", disable_rule:"Выключить правило",
-  adjust_confidence:"Изменить уверенность", enable_rule:"Включить правило"};
+  adjust_confidence:"Изменить уверенность", enable_rule:"Включить правило",
+  loosen_rule:"Смягчить правило"};
 
 async function renderRecsTab(body, d){
   const data = await api("/history/devices/" + encodeURIComponent(d.id) +

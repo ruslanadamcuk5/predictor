@@ -434,4 +434,113 @@ check("порог кэфа: подпись действия",
       rule_advisor.TYPE_TITLES.get("add_odds_floor") == "Поднять коэффициент",
       rule_advisor.TYPE_TITLES)
 
+# --------------------------------------------------------------------------
+# 8. «Засуха» правила: слишком жёсткое правило предлагают смягчить
+# --------------------------------------------------------------------------
+STARVED = {
+    "id": "rule-starved", "name": "ТБ 18.5: оба верховые",
+    "enabled": True, "priority": 100,
+    "conditions": {"logic": "and", "conditions": [
+        {"metric": "p.recent.over_rate",
+         "args": {"side": "p1", "window": 5, "threshold": 18.5},
+         "op": "gte", "value": 60.0},
+        {"metric": "p.recent.over_rate",
+         "args": {"side": "p2", "window": 5, "threshold": 18.5},
+         "op": "gte", "value": 60.0},
+    ]},
+    "action": {"type": "total", "targets": [1], "side": "over",
+               "threshold": 18.5, "confidence": 0.64},
+}
+
+starved = rule_advisor.recommend(
+    BOTH, ["table_tennis"], {"table_tennis": [STARVED]})
+drought = [item for item in starved["recommendations"]
+           if item["type"] == "loosen_rule"]
+check("засуха: правило без срабатываний получает рекомендацию",
+      len(drought) == 1, starved["recommendations"])
+if drought:
+    drec = drought[0]
+    check("засуха: заголовок типа",
+          drec["type_title"] == "Смягчить правило", drec.get("type_title"))
+    check("засуха: привязана к правилу и условию",
+          drec["rule_id"] == "rule-starved" and bool(drec.get("condition"))
+          and bool(drec.get("change_text")), drec)
+    check("засуха: правка реально расширяет правило",
+          drec["patch"]["conditions"] != STARVED["conditions"]
+          and drec["matched_after"] >= 6, drec.get("patch"))
+    check("засуха: точность после в допустимых пределах",
+          drec["precision_after"] >= 57.0, drec.get("precision_after"))
+    check("засуха: причина объясняет тишину",
+          "молчит" in drec["reason"], drec.get("reason"))
+    check("засуха: причина говорит об осторожности",
+          "осторожное" in drec["reason"], drec.get("reason"))
+
+    again = rule_advisor.recommend(
+        BOTH, ["table_tennis"], {"table_tennis": [STARVED]},
+        state=starved["advisor_state"])
+    again_rec = [item for item in again["recommendations"]
+                 if item["type"] == "loosen_rule"]
+    check("засуха: id рекомендации стабилен",
+          bool(again_rec) and again_rec[0]["id"] == drec["id"], again_rec)
+    check("засуха: повторно не новая",
+          bool(again_rec) and again_rec[0]["is_new"] is False,
+          again_rec and again_rec[0].get("is_new"))
+
+    applied_rule, message = engine_api.Engine._apply_rec_to_rule(
+        None, STARVED, drec)
+    check("засуха: правка применяется к правилу",
+          applied_rule is not None, message)
+    done, reason = rule_advisor._is_resolved(drec, applied_rule)
+    check("засуха: после применения рекомендация закрыта",
+          done is True, reason)
+    after = rule_advisor.recommend(
+        BOTH, ["table_tennis"], {"table_tennis": [applied_rule]})
+    check("засуха: после применения та же рекомендация не возвращается",
+          all(item["type"] != "loosen_rule" or item["id"] != drec["id"]
+              for item in after["recommendations"]),
+          after["recommendations"])
+
+WIDEN = {
+    "id": "rule-widen", "name": "ТБ 18.5: высокий тотал",
+    "enabled": True, "priority": 100,
+    "conditions": {"logic": "and", "conditions": [
+        {"metric": "p.recent.avg_set_total",
+         "args": {"side": "p1", "window": 5},
+         "op": "gte", "value": 23.5},
+    ]},
+    "action": {"type": "total", "targets": [1], "side": "over",
+               "threshold": 18.5, "confidence": 0.62},
+}
+widened = rule_advisor.recommend(
+    BOTH, ["table_tennis"], {"table_tennis": [WIDEN]})
+wrec = [item for item in widened["recommendations"]
+        if item["type"] == "loosen_rule"]
+check("засуха: единственное условие смягчают, а не убирают",
+      len(wrec) == 1 and wrec[0]["change_kind"] == "widen", wrec)
+if wrec:
+    check("засуха: порог сдвинут в сторону рынка",
+          wrec[0]["condition_after"]["value"] < 23.5,
+          wrec[0].get("condition_after"))
+    check("засуха: после смягчения есть сигналы и точность",
+          wrec[0]["matched_after"] >= 6
+          and wrec[0]["precision_after"] >= 57.0, wrec[0])
+
+ACTIVE = {
+    "id": "rule-active", "name": "ТБ 18.5: форма игрока 1",
+    "enabled": True, "priority": 100,
+    "conditions": {"logic": "and", "conditions": [
+        {"metric": "p.recent.over_rate",
+         "args": {"side": "p1", "window": 5, "threshold": 18.5},
+         "op": "gte", "value": 60.0},
+    ]},
+    "action": {"type": "total", "targets": [1], "side": "over",
+               "threshold": 18.5, "confidence": 0.6},
+}
+active = rule_advisor.recommend(
+    BOTH, ["table_tennis"], {"table_tennis": [ACTIVE]})
+check("засуха: работающее правило не получает ложного смягчения",
+      all(item["type"] != "loosen_rule"
+          for item in active["recommendations"]),
+      active["recommendations"])
+
 print("OK — пройдено проверок: %d" % len(PASSED))
