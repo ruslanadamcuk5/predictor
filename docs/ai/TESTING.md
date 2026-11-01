@@ -45,6 +45,8 @@ python tests\test_analyzer.py
 python tests\test_profit.py
 python tests\test_auto_rules.py
 python tests\test_recommendations.py
+python tests\test_live_tool.py
+python tests\test_ui_settings.py
 python tests\test_release_tool.py
 python tests\test_online_server.py
 python tests\test_history_server.py
@@ -55,6 +57,12 @@ python tests\test_history_server.py
 ```bash
 python tools/check_live.py --base https://predictor.alwaysdata.net
 ```
+
+Скрипт проверяет ping, веб-кабинет, API истории, манифест обновления, ссылку
+на APK и Range-докачку, совпадение `version` сервера с `version_name`
+манифеста, а затем отправляет настоящий POST в `/api/v1/analyze` и убеждается,
+что сервер считает той же версией и возвращает рекомендации. Это ловит
+рассинхрон кода и релиза после выкладки.
 
 Публичный сайт уже развёрнут; для проверки изменений без выкладки сервис
 можно поднять локально и проверить с телефона в той же Wi-Fi сети:

@@ -40,7 +40,11 @@
 - **регрессии**: `test_recommendations.py` расширен до 81 проверки (свежесть,
   relaxed-вариант, отказ от no-op), добавлен браузерный
   `tools/ui_harness/check_settings.js` и `tests/test_ui_settings.py` (входит
-  в офлайн-набор, пропускается без Node.js).
+  в офлайн-набор, пропускается без Node.js);
+- **проверка выкладки**: `tools/check_live.py` теперь сверяет версию сервера
+  с манифестом и отправляет живой POST в `/api/v1/analyze`; добавлен
+  `tests/test_live_tool.py` (6 проверок) против локального сервера, чтобы
+  заголовки ответа APK не перекрывали тело запроса анализа.
 
 Версия: `versionName 1.21`, `versionCode 22`, `APP_VERSION 1.21.0`,
 `SERVER_VERSION 1.21.0`.

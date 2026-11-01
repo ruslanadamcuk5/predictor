@@ -187,6 +187,47 @@ python tools/prepare_server.py
 В Linux-сборке путь к Python для Chaquopy задаётся переменной
 `CHAQUOPY_BUILD_PYTHON` (по умолчанию скрипт ищет Python 3.13 в системе).
 
+## 6.2. Выкладка сервиса на alwaysdata
+
+Сайт `https://predictor.alwaysdata.net` живёт на аккаунте `predictor`:
+код — `~/predictor`, статика и релизы — `~/www`. Переменные окружения и
+данные лежат в `~/predictor/.env` и `~/predictor/data` и при выкладке кода
+не трогаются. Второй сайт `virusadk.alwaysdata.net` не затрагивается.
+
+```bash
+# 1. Страховочная копия кода (без data и .env)
+ssh -i "$KEY" predictor@ssh-predictor.alwaysdata.net \
+  'cd ~/predictor && tar czf ~/backup_code_$(date +%Y%m%d_%H%M%S).tgz \
+   --exclude=./data --exclude=./.env --exclude=__pycache__ .'
+
+# 2. Код сайта: dist/server без data, .env и releases
+cd dist/server
+tar czf /tmp/server.tgz --exclude='./data' --exclude='./.env' \
+    --exclude='./releases' --exclude='__pycache__' .
+cat /tmp/server.tgz | ssh -i "$KEY" predictor@ssh-predictor.alwaysdata.net \
+    'cd ~/predictor && tar xzf -'
+
+# 3. Релизы и статика
+scp -i "$KEY" releases/predictor-<версия>.apk releases/update.json \
+    predictor@ssh-predictor.alwaysdata.net:~/www/releases/
+scp -i "$KEY" dist/server/index.html \
+    predictor@ssh-predictor.alwaysdata.net:~/www/index.html
+scp -i "$KEY" dist/server/cgi_adapter.py \
+    predictor@ssh-predictor.alwaysdata.net:~/www/cgi/predictor.py
+```
+
+После выкладки:
+
+```bash
+python tools/check_live.py --base https://predictor.alwaysdata.net
+```
+
+Скрипт проверяет пинг, кабинет, API истории, манифест, Range-докачку APK,
+совпадение версии сервера с манифестом и живой `/api/v1/analyze`. Если он
+прошёл, сайт отдаёт ту же версию, что и собранный APK. Старые релизы в
+`~/www/releases` удаляйте, оставляя 3 последних (как `publish_release.py
+--keep 3`).
+
 ## 7. Установка
 
 ```powershell
@@ -224,6 +265,7 @@ Copy-Item app\src\main\assets\www\* ".backups\${stamp}_<тема>\" -Force
 - [ ] `CHANGELOG.md` и `PROJECT.md` обновлены.
 - [ ] `releases/update.json` проверен: версия, размер, SHA-256, ссылка.
 - [ ] Установка на arm64 Android 7.0+ и `TESTING.md` → раздел 6.
+- [ ] Сервис выложен, `tools/check_live.py` прошёл, версии совпадают.
 - [ ] Резервная копия исходников создана.
 
 ## 10. Типовые проблемы

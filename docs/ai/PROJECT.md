@@ -114,11 +114,11 @@ Live-линия всех видов: команды, счёт, коэффици�
 | Размер APK | 38 951 382 байт (37,1 МБ) |
 | SHA-256 | `02f1324b9078fac6ad11da85df7cbe8fcfedaaf7e5eb528610444d169f625024` |
 
-Состояние на 01.11.2026: офлайн-регрессии (21 набор), `test_engine_core.py`
+Состояние на 01.11.2026: офлайн-регрессии (22 набора), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
 `test_recommendations.py` (81), `test_ai.py` (90), `test_ui_settings.py` (14),
-`test_history_server.py` (82), `test_online_server.py` (67) и
-`test_release_tool.py` (20) проходят.
+`test_history_server.py` (82), `test_online_server.py` (67),
+`test_release_tool.py` (20) и `test_live_tool.py` (6) проходят.
 APK 1.21 собран (Chaquopy 17.1.0,
 Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,
 и проверен `aapt2`/`apksigner`. Онлайн-сервис развёрнут на

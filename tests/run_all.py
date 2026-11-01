@@ -34,6 +34,7 @@ OFFLINE = [
     "test_online_server.py",
     "test_history_server.py",
     "test_release_tool.py",
+    "test_live_tool.py",
     "test_ai.py",
     "test_nn.py",
     "test_sports_pipeline.py",
