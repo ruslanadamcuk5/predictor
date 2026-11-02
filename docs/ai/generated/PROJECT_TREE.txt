@@ -156,6 +156,7 @@ tests/
   test_full_cycle.py
   test_history_server.py
   test_live_analysis.py
+  test_live_tool.py
   test_nn.py
   test_online_server.py
   test_parse_stats.py
@@ -168,6 +169,7 @@ tests/
   test_sports_metrics.py
   test_sports_pipeline.py
   test_telegram_apply.py
+  test_ui_settings.py
   fixtures/
     stats_page.html
     sport_probe/
@@ -196,6 +198,7 @@ tools/
   ui_harness/
     README.md
     app.js
+    check_settings.js
     docs.js
     index.html
     mock.js
