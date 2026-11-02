@@ -89,6 +89,15 @@ check("адрес Gemini подставлен",
 check("модель Gemini подставлена", cfg["model"] == "gemini-3.8-flash", cfg)
 check("ассистент готов", assistant.ready() is True)
 
+# Старые сохранения писали per_cycle=0, хотя автопрогноз включён.
+eng.settings.update({"ai": {"auto_predict": True, "per_cycle": 0}})
+check("нулевой лимит при автопрогнозе поднимается до 1",
+      assistant.config()["per_cycle"] == 1, assistant.config()["per_cycle"])
+eng.settings.update({"ai": {"auto_predict": False, "per_cycle": 0}})
+check("явный 0 без автопрогноза сохраняется",
+      assistant.config()["per_cycle"] == 0, assistant.config()["per_cycle"])
+eng.settings.update({"ai": {"auto_predict": False, "per_cycle": 1}})
+
 fake = FakeSession("ответ модели")
 assistant.session = fake
 text = assistant.chat([{"role": "user", "content": "привет"}])
@@ -466,6 +475,6 @@ check("таймаут по умолчанию 60", assistant.config()["timeout"]
       assistant.config()["timeout"])
 
 # ------------------------------------------------------------------ версия
-check("версия движка 1.21.0", api.APP_VERSION == "1.21.0", api.APP_VERSION)
+check("версия движка 1.22.0", api.APP_VERSION == "1.22.0", api.APP_VERSION)
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

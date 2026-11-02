@@ -238,6 +238,36 @@ check("нет рекомендаций по футбольному правил�
       all(item["rule_id"] != "rule-fb"
           for item in mixed["recommendations"]))
 
+# --------------------------------------------------------------------------
+# 2b. Обратный кандидат: текст совпадает со знаком, который предлагаем
+# --------------------------------------------------------------------------
+# Раньше для условия из неудач брался текст исходной строки, и вместо
+# «< 3» рекомендация показывала «≥ 3». Пользователь применял условие,
+# противоположное задуманному, и правило замолкало.
+failure_row = {
+    "condition": {"metric": "p.recent.matches_last_7d", "op": "gte",
+                  "value": 3.0, "args": {"side": "p2", "window": 3}},
+    "text": "Игр игрока 2 за последние 7 дней ≥ 3",
+    "lift": 12.0, "loss_share": 80.0,
+}
+original_rows = rule_advisor._analysis_rows
+try:
+    rule_advisor._analysis_rows = lambda sport, group, min_group: {
+        "success": [], "failure": [failure_row]}
+    pool = rule_advisor._candidate_pool("table_tennis", [], 1)
+finally:
+    rule_advisor._analysis_rows = original_rows
+check("обратный кандидат инвертирует знак",
+      pool and pool[0]["condition"]["op"] == "lt",
+      pool[0]["condition"] if pool else pool)
+check("текст обратного кандидата описывает инвертированный знак",
+      pool and pool[0]["text"] == rule_advisor.ce.describe_condition(
+          pool[0]["condition"], sport="table_tennis"),
+      pool[0]["text"] if pool else pool)
+check("текст не повторяет исходное «≥»",
+      pool and "≥" not in pool[0]["text"] and "<" in pool[0]["text"],
+      pool[0]["text"] if pool else pool)
+
 both = rule_advisor.recommend(
     BOTH, ["table_tennis", "football"],
     {"table_tennis": [RULE], "football": [OTHER_RULE]})
@@ -525,6 +555,10 @@ if wrec:
     check("засуха: после смягчения есть сигналы и точность",
           wrec[0]["matched_after"] >= 6
           and wrec[0]["precision_after"] >= 57.0, wrec[0])
+    # При засухе важен не минимальный сдвиг, а возврат покрытия: если
+    # несколько порогов держат точность, выбираем самый широкий.
+    check("засуха: из безопасных вариантов выбирают самый широкий",
+          wrec[0]["matched_after"] == 9, wrec[0].get("matched_after"))
 
 ACTIVE = {
     "id": "rule-active", "name": "ТБ 18.5: форма игрока 1",

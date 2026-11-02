@@ -215,7 +215,23 @@ SNAPSHOT = {
     "rules": {"table_tennis": [RULE]},
     "predictions": build_history(),
     "advisor_state": {},
-    "meta": {"model": "Pixel 7", "platform": "Android 15"},
+    "meta": {
+        "model": "Pixel 7", "platform": "Android 15",
+        "diagnostics": {
+            "engine": {
+                "running": True, "live_matches": 5,
+                "last_summary": {"matches": 5, "signals": 0},
+                "stats": {"skipped": 3, "blocked_general": 2},
+            },
+            "ai": {
+                "enabled": True, "ready": True, "auto_predict": True,
+                "per_cycle": 1, "per_day": 40, "sports_selected": ["table_tennis"],
+                "markets": {"table_tennis": ["total"]},
+            },
+            "rules": {"enabled": 1, "total": 1},
+            "sync": {"interval_min": 15},
+        },
+    },
 }
 
 # --------------------------------------------------------------------------
@@ -264,6 +280,16 @@ check("overview: дневной ряд", len(data["device"]["stats"]["daily"]) =
       len(data["device"]["stats"].get("daily") or []))
 check("overview: событие создания", data["events"][0]["kind"] == "created",
       data.get("events"))
+meta = data["device"].get("meta") or {}
+diag = meta.get("diagnostics") or {}
+check("overview: настройки отдаются отдельным полем",
+      (data["device"].get("settings") or {}).get("active_sport")
+      == "table_tennis", data["device"].get("settings"))
+check("overview: диагностика движка доходит до кабинета",
+      (diag.get("engine") or {}).get("live_matches") == 5, meta)
+check("overview: диагностика ИИ доходит до кабинета",
+      (diag.get("ai") or {}).get("per_cycle") == 1
+      and (diag.get("ai") or {}).get("auto_predict") is True, meta)
 
 # --------------------------------------------------------------------------
 # 3. Рекомендации и их применение

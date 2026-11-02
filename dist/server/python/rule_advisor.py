@@ -339,7 +339,7 @@ def _candidate_pool(sport, group, min_group):
     candidates = []
     seen = set()
 
-    def add(condition, source, row):
+    def add(condition, source, row, text=""):
         if not isinstance(condition, dict):
             return
         key = condition_key(condition)
@@ -348,8 +348,10 @@ def _candidate_pool(sport, group, min_group):
         seen.add(key)
         candidates.append({
             "condition": condition,
-            "text": row.get("text") or ce.describe_condition(
-                condition, sport=sport),
+            # Текст всегда описывает именно то условие, которое предлагаем
+            # добавить. Для обратных условий из неудач исходный row["text"]
+            # говорил бы про противоположный знак («≥ 3» вместо «< 3»).
+            "text": text or ce.describe_condition(condition, sport=sport),
             "source": source,
             "lift": _num(row.get("lift")),
             "share": _num(row.get("win_share") if source == "success"
@@ -357,10 +359,12 @@ def _candidate_pool(sport, group, min_group):
         })
 
     for row in (payload.get("success") or [])[:8]:
-        add(row.get("condition"), "success", row)
+        # Удачный признак берём как есть — описание из анализа совпадает.
+        add(row.get("condition"), "success", row, str(row.get("text") or ""))
     for row in (payload.get("failure") or [])[:8]:
         inverse = auto_rules._invert(row.get("condition"))
         if inverse:
+            # Знак инвертирован, поэтому текст пересчитываем по условию.
             add(inverse, "failure", row)
     return candidates
 
@@ -788,13 +792,23 @@ def _simulate_loosen(group, base, sport, need, min_precision):
     valid = strict or reserved
     if not valid:
         return None
-    best_precision = max(item["precision"] for item in valid)
-    # Держим точность в пределах 1 п.п. от лучшего варианта: это и есть
-    # «золотая середина» — сигналы возвращаются без потери качества.
-    finalists = [item for item in valid
-                 if item["precision"] >= best_precision - 1.0]
-    finalists.sort(key=lambda item: (
-        item["distance"], -item["precision"], -item["matched"]))
+    if strict:
+        # Правило молчит: цель смягчения — вернуть сигналы, не опускаясь
+        # ниже планки точности. Поэтому среди прошедших её вариантов берём
+        # самый широкий, а точность и малый сдвиг решают только при равенстве.
+        # Иначе побеждал минимальный сдвиг, который даёт 2–3 матча и снова
+        # оставляет правило почти без сигналов.
+        finalists = list(strict)
+        finalists.sort(key=lambda item: (
+            -item["matched"], -item["precision"], item["distance"]))
+    else:
+        # Запасной путь: здесь точность уже ниже цели, поэтому держим её
+        # в пределах 1 п.п. от лучшего варианта и выбираем самый мягкий.
+        best_precision = max(item["precision"] for item in valid)
+        finalists = [item for item in valid
+                     if item["precision"] >= best_precision - 1.0]
+        finalists.sort(key=lambda item: (
+            item["distance"], -item["precision"], -item["matched"]))
     best = finalists[0]
     best["relaxed"] = bool(reserved and not strict) or best.get("relaxed", False)
     best["score"] = round(

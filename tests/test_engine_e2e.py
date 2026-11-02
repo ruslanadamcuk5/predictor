@@ -39,13 +39,28 @@ def js(raw):
 
 print("=== версия/состояние ===")
 v = js(api.api_version())
-check("версия", v["version"] == "1.21.0", str(v))
+check("версия", v["version"] == "1.22.0", str(v))
 check("data_dir создан", os.path.isdir(v["data_dir"]), v["data_dir"])
 
 st = js(api.api_state())
 check("state содержит engine_running", "engine_running" in st)
 check("state содержит stats", isinstance(st.get("stats"), dict))
-check("state содержит version", st.get("version") == "1.21.0")
+check("state содержит version", st.get("version") == "1.22.0")
+
+diag = api.engine()._sync_diagnostics(
+    {"table_tennis": [{"id": "r1", "enabled": True}]})
+check("диагностика: блок движка", "engine" in diag
+      and "live_matches" in diag["engine"], diag.get("engine"))
+check("диагностика: блок ИИ", "ai" in diag
+      and "per_cycle" in diag["ai"], diag.get("ai"))
+check("диагностика: дефолты ИИ не нулевые",
+      diag["ai"].get("per_cycle") == 1 and diag["ai"].get("per_day") == 40,
+      diag.get("ai"))
+check("диагностика: ошибка ИИ передаётся", "last_error" in diag["ai"],
+      diag.get("ai"))
+check("диагностика: счётчик правил",
+      diag["rules"]["enabled"] == 1 and diag["rules"]["total"] == 1,
+      diag.get("rules"))
 
 print("=== настройки ===")
 s = js(api.api_settings())

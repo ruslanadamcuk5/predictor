@@ -41,7 +41,7 @@ import profit  # noqa: E402
 import rule_advisor  # noqa: E402
 import sports as sport_catalog  # noqa: E402
 
-SERVER_VERSION = "1.21.0"
+SERVER_VERSION = "1.22.0"
 SCHEMA_VERSION = 1
 MAX_DEVICE_ROWS = 40000
 RETENTION_DAYS = 400
@@ -548,8 +548,12 @@ def _normalize_rules(value):
     return result
 
 
-def _result_for(pred, target, kind):
-    for result in pred.get("set_results") or []:
+def _result_for(pred, target, kind, source="rule"):
+    # У ИИ свои результаты: ai_results считаются отдельно от прогнозов
+    # правил, иначе мнение модели навсегда оставалось бы «в ожидании».
+    results = pred.get("ai_results") if source == "ai" \
+        else pred.get("set_results")
+    for result in results or []:
         if not isinstance(result, dict):
             continue
         if str(result.get("target")) != str(target):
@@ -580,7 +584,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
         target = str(item.get("target") or "")
         kind = str(item.get("kind") or "")
         label = _clean(item.get("label") or target, 120)
-        result = _result_for(pred, target, kind)
+        result = _result_for(pred, target, kind, source=source)
         success = result.get("success")
         if success is not None:
             success = 1 if success else 0
@@ -1615,6 +1619,7 @@ def device_overview(device_id, days=30):
                 "odds_n": money.get("odds_n") or 0,
             })
         events = _events(conn, device_id, limit=8, offset=0)
+        device["meta"] = _json(row["meta_json"], {})
         return {
             "ok": True, "device": device, "sports": sports,
             "targets": targets, "events": events["items"],

@@ -276,6 +276,7 @@ input,select{font:inherit;color:inherit}
 .setting{background:#0c111a;border:1px solid #1e2535;border-radius:9px;padding:8px 10px;font-size:12px}
 .setting .s-k{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
 .setting .s-v{margin-top:2px;word-break:break-word}
+.setting .s-v.bad{color:var(--bad)}
 .toast{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;flex-direction:column;gap:8px}
 .toast div{background:#1b2434;border:1px solid #33405c;border-radius:10px;padding:10px 14px;
   font-size:12.5px;box-shadow:0 14px 30px -16px #000;animation:tin .2s ease-out}
@@ -1700,7 +1701,71 @@ async function renderPredictionsTab(body, d){
 
 async function renderSettingsTab(body, d){
   const meta = d.meta || {};
-  const settings = meta.settings || {};
+  // Настройки приходят отдельным полем устройства; meta.settings —
+  // совместимость со старыми снимками.
+  const settings = d.settings || meta.settings || {};
+  const diag = meta.diagnostics || {};
+  const eng = diag.engine || {};
+  const aiDiag = diag.ai || {};
+  const rulesDiag = diag.rules || {};
+  const syncDiag = diag.sync || {};
+  const aiSports = Array.isArray(aiDiag.sports_selected)
+    ? aiDiag.sports_selected : [];
+  const aiMarkets = (aiDiag.markets && typeof aiDiag.markets === "object")
+    ? Object.keys(aiDiag.markets).reduce((sum, key) => {
+        const list = aiDiag.markets[key];
+        return sum + (Array.isArray(list) ? list.length : 0);
+      }, 0) : 0;
+  const engStats = eng.stats || {};
+  const lastCycle = eng.last_summary || {};
+  const aiState = !aiDiag.enabled ? "выключен"
+    : (aiDiag.ready ? "готов" : "не настроен");
+  const aiTone = !aiDiag.enabled ? "gray" : (aiDiag.ready ? "ok" : "warn");
+  const diagnosticsHTML = (diag.engine || diag.ai) ?
+    '<div class="cols" style="margin-top:12px">' +
+      '<div class="panel"><div class="subhead"><h3>Движок и правила</h3>' +
+        '<span class="badge '+(eng.running ? "ok" : "bad")+'">' +
+          (eng.running ? "работает" : "остановлен")+'</span></div>' +
+        '<div class="settings-grid">' +
+          '<div class="setting"><div class="s-k">Матчей в линии</div><div class="s-v">'+num(eng.live_matches,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Последний цикл</div><div class="s-v">'+esc(dt(eng.last_cycle))+'</div></div>' +
+          '<div class="setting"><div class="s-k">Сигналов за цикл</div><div class="s-v">'+num(lastCycle.signals,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Правил включено</div><div class="s-v">'+num(rulesDiag.enabled,0)+' из '+num(rulesDiag.total,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Обработано матчей</div><div class="s-v">'+num(eng.processed,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Интервал опроса</div><div class="s-v">'+num(eng.poll_interval_sec,0)+' с</div></div>' +
+          '<div class="setting"><div class="s-k">Пропущено</div><div class="s-v">'+num(engStats.skipped,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Отсечено настройками</div><div class="s-v">'+num(engStats.blocked_settings,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Отсечено общими фильтрами</div><div class="s-v">'+num(engStats.blocked_general,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Отсечено по кэфам</div><div class="s-v">'+num(engStats.blocked_odds,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Нет очных</div><div class="s-v">'+num(engStats.no_h2h,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Синхронизация</div><div class="s-v">каждые '+num(syncDiag.interval_min,0)+' мин · '+esc(syncDiag.last_sync || "—")+'</div></div>' +
+          (eng.last_error ? '<div class="setting"><div class="s-k">Ошибка движка</div><div class="s-v bad">'+esc(eng.last_error)+'</div></div>' : '') +
+          (syncDiag.last_error ? '<div class="setting"><div class="s-k">Ошибка синка</div><div class="s-v bad">'+esc(syncDiag.last_error)+'</div></div>' : '') +
+        '</div>' +
+        '<div class="sub" style="margin-top:10px">Причина тишины видна здесь: если матчи в линии есть, а сигналов ноль — правило слишком строгое или отсекает общий фильтр. Если линия пуста — проверьте интернет и доступ к Betcity.</div>' +
+      '</div>' +
+      '<div class="panel"><div class="subhead"><h3>AI-ассистент</h3>' +
+        '<span class="badge '+aiTone+'">'+esc(aiState)+'</span></div>' +
+        '<div class="settings-grid">' +
+          '<div class="setting"><div class="s-k">Провайдер</div><div class="s-v">'+esc(aiDiag.provider_label || aiDiag.provider || "—")+'</div></div>' +
+          '<div class="setting"><div class="s-k">Модель</div><div class="s-v">'+esc(aiDiag.model || "—")+'</div></div>' +
+          '<div class="setting"><div class="s-k">Ключ API</div><div class="s-v">'+(aiDiag.has_key ? "задан" : "нет")+'</div></div>' +
+          '<div class="setting"><div class="s-k">Автопрогноз</div><div class="s-v">'+(aiDiag.auto_predict ? "включён" : "выключен")+'</div></div>' +
+          '<div class="setting"><div class="s-k">Матчей за цикл</div><div class="s-v">'+num(aiDiag.per_cycle,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Запросов в день</div><div class="s-v">'+num(aiDiag.per_day,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Использовано сегодня</div><div class="s-v">'+num(aiDiag.used_today,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Остаток квоты</div><div class="s-v">'+num(aiDiag.quota_left,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Видов выбрано</div><div class="s-v">'+num(aiSports.length,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Рынков выбрано</div><div class="s-v">'+num(aiMarkets,0)+'</div></div>' +
+          '<div class="setting"><div class="s-k">Порог уверенности</div><div class="s-v">'+num((aiDiag.min_confidence || 0) * 100,0)+'%</div></div>' +
+          (aiDiag.last_error ? '<div class="setting"><div class="s-k">Последняя ошибка</div><div class="s-v bad">'+esc(aiDiag.last_error)+'</div></div>' : '') +
+        '</div>' +
+        (!aiDiag.enabled ? '<div class="sub" style="margin-top:10px">ИИ выключен: прогнозы строят только правила и нейросеть.</div>' :
+          (!aiDiag.auto_predict ? '<div class="sub" style="margin-top:10px">Автопрогноз выключен: отдельные прогнозы ИИ не создаются, модель только объясняет найденные правила.</div>' :
+            (!aiDiag.per_cycle ? '<div class="sub" style="margin-top:10px">Лимит «матчей за цикл» равен нулю — ИИ не делает запросов. Поставьте 1–3.</div>' : ''))) +
+      '</div>' +
+    '</div>' :
+    '<div class="panel" style="margin-top:12px"><div class="sub">Диагностика появится после обновления приложения до 1.22 и первой синхронизации.</div></div>';
   const flat = [];
   const walk = (obj, prefix) => {
     Object.keys(obj || {}).forEach(k => {
@@ -1746,6 +1811,7 @@ async function renderSettingsTab(body, d){
         '</div>' +
       '</div>' +
     '</div>' +
+    diagnosticsHTML +
     '<div class="panel" style="margin-top:12px"><div class="subhead"><h3>Все присланные настройки</h3>' +
       '<span class="count" id="settingsCount"></span></div>' +
       '<div class="sub">Без токенов и ключей: приложение отправляет только параметры анализа.</div>' +

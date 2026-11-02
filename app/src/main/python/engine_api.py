@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.21.0"
+APP_VERSION = "1.22.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -45,6 +45,7 @@ class Engine:
         self._queue_ts = None
         self._queue_error = None
         self._cycles = 0
+        self._last_summary = {}
         self._started_at = None
         self._auto_lock = threading.RLock()
         self._auto_last = {}
@@ -93,6 +94,7 @@ class Engine:
             try:
                 summary = self.predictor.run_cycle()
                 self._cycles += 1
+                self._last_summary = dict(summary or {})
                 if summary.get("error"):
                     core.events.add("ERROR", "Ошибка цикла: %s" % summary["error"])
                 self._refresh_all_auto_rules()
@@ -147,6 +149,7 @@ class Engine:
             if not was_running:
                 self.settings.set_running(False)
         self._cycles += 1
+        self._last_summary = dict(summary or {}) if isinstance(summary, dict) else {}
         self._state_cache["at"] = 0
         core.events.add("INFO", "Ручная проверка: матчей %d, видов %d, сигналов %d" % (
             summary.get("matches", 0), summary.get("sports", 0),
@@ -1589,6 +1592,85 @@ class Engine:
             interval = 15
         return (time.time() - float(self._sync_last_ts or 0)) >= interval * 60
 
+    def _sync_diagnostics(self, rules=None):
+        """Короткая диагностика для кабинета: почему молчит движок и ИИ.
+
+        В историю прогнозов попадают только факты, а по ним не видно,
+        работает ли цикл, есть ли матчи в линии, включён ли ИИ и не
+        упёрся ли он в квоту. Эти поля уходят вместе с синком, чтобы
+        причину тишины было видно на сайте, а не только на телефоне.
+        """
+        predictor = self.predictor
+        try:
+            status = predictor.status_payload()
+        except Exception:
+            status = {}
+        ai = status.get("ai") or {}
+        ai_keys = ("enabled", "ready", "provider", "provider_label", "model",
+                   "has_key", "auto_predict", "embed", "sports_selected",
+                   "markets", "per_cycle", "per_day", "min_confidence",
+                   "used_today", "quota_left")
+        ai_diag = {key: ai.get(key) for key in ai_keys if key in ai}
+        try:
+            ai_diag["last_error"] = str(
+                getattr(predictor.ai, "_last_error", "") or "")[:300]
+        except Exception:
+            ai_diag["last_error"] = ""
+        stats = status.get("stats") or {}
+        stat_keys = ("checked", "sent", "skipped", "blocked_odds",
+                     "blocked_settings", "blocked_general", "no_h2h",
+                     "short_seq", "no_top")
+        stats_diag = {key: stats.get(key, 0) for key in stat_keys}
+        rules_by_sport = {}
+        total_rules = enabled_rules = 0
+        for sport, items in (rules or {}).items():
+            items = items or []
+            sport_enabled = sum(
+                1 for rule in items if rule.get("enabled", True))
+            rules_by_sport[str(sport)] = {
+                "total": len(items), "enabled": sport_enabled}
+            total_rules += len(items)
+            enabled_rules += sport_enabled
+        last_cycle = getattr(predictor, "_last_cycle", None)
+        summary = self._last_summary or {}
+        online = self.settings.snapshot().get("online") or {}
+        return {
+            "engine": {
+                "running": self.is_running(),
+                "cycles": self._cycles,
+                "poll_interval_sec": self.settings.get_poll_interval(),
+                "last_cycle": last_cycle.isoformat() if last_cycle else "",
+                "last_error": str(
+                    getattr(predictor, "_last_error", "") or "")[:300],
+                "live_matches": int(
+                    getattr(predictor, "_live_matches", 0) or 0),
+                "live_by_sport": dict(
+                    getattr(predictor, "_live_by_sport", {}) or {}),
+                "processed": len(
+                    getattr(predictor, "processed_matches", {}) or {}),
+                "algorithm_mode": self.settings.get_algorithm_mode(),
+                "last_summary": {
+                    "matches": int(summary.get("matches") or 0),
+                    "upcoming": int(summary.get("upcoming") or 0),
+                    "signals": int(summary.get("signals") or 0),
+                    "sports": int(summary.get("sports") or 0),
+                    "error": summary.get("error") or "",
+                },
+                "stats": stats_diag,
+            },
+            "ai": ai_diag,
+            "rules": {
+                "total": total_rules,
+                "enabled": enabled_rules,
+                "by_sport": rules_by_sport,
+            },
+            "sync": {
+                "interval_min": int(online.get("sync_interval_min") or 15),
+                "last_sync": online.get("last_sync") or "",
+                "last_error": str(online.get("last_sync_error") or "")[:300],
+            },
+        }
+
     def _push_history(self, force=False):
         """Отправляет снимок истории и правил в веб-кабинет."""
         snapshot = self.settings.snapshot()
@@ -1609,7 +1691,8 @@ class Engine:
                     advisor_state=self._advisor_state,
                     device=device, app_version=APP_VERSION,
                     meta={"model": device.get("model") or "",
-                          "platform": device.get("platform") or ""})
+                          "platform": device.get("platform") or "",
+                          "diagnostics": self._sync_diagnostics(rules)})
                 synced = result.get("synced") or {}
                 rules_info = synced.get("rules") or {}
                 parts = []

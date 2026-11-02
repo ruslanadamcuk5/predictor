@@ -1100,6 +1100,21 @@ function renderAiSettings(status) {
   renderAiProviders();
 }
 
+function aiIntValue(value, fallback, min, max) {
+  // Отсутствие значения — это не ноль. Настройки ИИ по умолчанию:
+  // 1 запрос за цикл и 40 в день; явный 0 пользователя сохраняется.
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+function aiIntField(id, fallback, min, max) {
+  const el = $(id);
+  if (!el) return fallback;
+  return aiIntValue(String(el.value).trim(), fallback, min, max);
+}
+
 function collectAiSettings() {
   // Возвращаем только блок ai. Раньше здесь клонировался весь снимок
   // настроек и через Object.assign перекрывал уже собранные поля
@@ -1117,8 +1132,8 @@ function collectAiSettings() {
       embed: $('setAiEmbed') ? $('setAiEmbed').checked : false,
       sports: aiSportIds(),
       markets: aiMarketsMap(),
-      per_cycle: Math.max(0, Math.min(5, num($('setAiPerCycle').value) || 0)),
-      per_day: Math.max(0, Math.min(1000, num($('setAiPerDay').value) || 0)),
+      per_cycle: aiIntField('setAiPerCycle', 1, 0, 5),
+      per_day: aiIntField('setAiPerDay', 40, 0, 1000),
       min_confidence: Math.max(0.3, Math.min(0.95,
         (num($('setAiConfidence').value) || 50) / 100)),
     },
@@ -2348,8 +2363,12 @@ function renderSettings(s) {
   if ($('setAiThinking')) $('setAiThinking').checked = ai.thinking !== false;
   if ($('setAiAutoPredict')) $('setAiAutoPredict').checked = !!ai.auto_predict;
   if ($('setAiEmbed')) $('setAiEmbed').checked = !!ai.embed;
-  if ($('setAiPerCycle')) $('setAiPerCycle').value = String(num(ai.per_cycle) || 0);
-  if ($('setAiPerDay')) $('setAiPerDay').value = String(num(ai.per_day) || 0);
+  if ($('setAiPerCycle')) {
+    $('setAiPerCycle').value = String(aiIntValue(ai.per_cycle, 1, 0, 5));
+  }
+  if ($('setAiPerDay')) {
+    $('setAiPerDay').value = String(aiIntValue(ai.per_day, 40, 0, 1000));
+  }
   if ($('setAiConfidence')) {
     $('setAiConfidence').value =
       String(Math.round((num(ai.min_confidence) || 0.5) * 100));

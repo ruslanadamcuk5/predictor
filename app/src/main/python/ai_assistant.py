@@ -183,9 +183,15 @@ class AIAssistant:
             cfg["timeout"] = 90
         try:
             value = int(cfg.get("per_cycle"))
-            cfg["per_cycle"] = max(0, min(5, value if value is not None else 0))
+            cfg["per_cycle"] = max(0, min(5, value if value is not None else 1))
         except Exception:
-            cfg["per_cycle"] = 0
+            cfg["per_cycle"] = 1
+        # Старые версии веб-форм сохраняли отсутствующий лимит как 0,
+        # из-за чего включённый автопрогноз молчал. Ноль при включённом
+        # автопрогнозе — противоречие: автопрогноз выключается галочкой,
+        # поэтому поднимаем лимит до одного запроса за цикл.
+        if cfg.get("auto_predict") and not cfg["per_cycle"]:
+            cfg["per_cycle"] = 1
         try:
             value = int(cfg.get("per_day"))
             cfg["per_day"] = max(0, min(1000, value if value is not None else 40))
@@ -990,6 +996,7 @@ class AIAssistant:
             "min_confidence": cfg["min_confidence"],
             "used_today": self.usage_today(),
             "quota_left": self.quota_left(),
+            "last_error": str(self._last_error or "")[:300],
             "providers": [{"id": key, "label": item["label"],
                            "base_url": item["base_url"],
                            "model": item["model"]}

@@ -102,24 +102,24 @@ Live-линия всех видов: команды, счёт, коэффици�
 
 | Параметр | Значение |
 |---|---|
-| Версия | 1.21 |
-| `versionCode` | 22 |
-| `APP_VERSION` | 1.21.0 |
-| `SERVER_VERSION` | 1.21.0 |
-| APK | `../Predictor-1.21.apk` |
+| Версия | 1.22 |
+| `versionCode` | 23 |
+| `APP_VERSION` | 1.22.0 |
+| `SERVER_VERSION` | 1.22.0 |
+| APK | `../Predictor-1.22.apk` |
 | minSdk | 24 (Android 7.0) |
 | targetSdk | 34 |
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
-| Размер APK | 38 951 382 байт (37,1 МБ) |
-| SHA-256 | `02f1324b9078fac6ad11da85df7cbe8fcfedaaf7e5eb528610444d169f625024` |
+| Размер APK | 38 951 614 байт (37,1 МБ) |
+| SHA-256 | `5e00e35076cda7860a75152555c0664c5ad4bc1576df07dc114bc0eaf19c8873` |
 
-Состояние на 01.11.2026: офлайн-регрессии (22 набора), `test_engine_core.py`
+Состояние на 02.11.2026: офлайн-регрессии (22 набора), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
-`test_recommendations.py` (81), `test_ai.py` (90), `test_ui_settings.py` (14),
-`test_history_server.py` (82), `test_online_server.py` (67),
+`test_recommendations.py` (85), `test_ai.py` (92), `test_ui_settings.py` (14),
+`test_history_server.py` (85), `test_online_server.py` (67),
 `test_release_tool.py` (20) и `test_live_tool.py` (6) проходят.
-APK 1.21 собран (Chaquopy 17.1.0,
+APK 1.22 собран (Chaquopy 17.1.0,
 Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,
 и проверен `aapt2`/`apksigner`. Онлайн-сервис развёрнут на
 `https://predictor.alwaysdata.net` (аккаунт `predictor`, сайт PHP/static +
@@ -128,7 +128,7 @@ CGI-адаптер `server/cgi_adapter.py`). Проверены ping, маниф
 отчёта с локальным `build_report`, `POST /api/v1/sync` и все разделы
 веб-кабинета. Чужой сайт `virusadk.alwaysdata.net` не используется.
 Осталось проверить установку на физическом устройстве и автообновление
-поверх 1.17: нужны реальная линия Betcity и ключ ИИ.
+поверх 1.21: нужны реальная линия Betcity и ключ ИИ.
 
 ## 5. Границы проекта
 

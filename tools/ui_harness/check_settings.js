@@ -175,6 +175,25 @@ check('фоновый статус обновляет бейдж',
   element('setAiBadge').textContent === 'выкл',
   element('setAiBadge').textContent);
 
+// --- дефолты ИИ: пустое поле не должно сохраняться как 0 ---
+element('setAiPerCycle').value = '';
+element('setAiPerDay').value = '';
+const aiDefaults = ui.collectAiSettings().ai;
+check('пустой лимит за цикл сохраняется как 1, а не 0',
+  aiDefaults.per_cycle === 1, aiDefaults.per_cycle);
+check('пустой дневной лимит сохраняется как 40, а не 0',
+  aiDefaults.per_day === 40, aiDefaults.per_day);
+element('setAiPerCycle').value = '0';
+element('setAiPerDay').value = '0';
+const aiZero = ui.collectAiSettings().ai;
+check('явный 0 пользователя сохраняется',
+  aiZero.per_cycle === 0 && aiZero.per_day === 0, aiZero);
+ui.renderSettings({ ai: { provider: 'gemini', enabled: false } });
+check('настройки без per_cycle показывают 1 по умолчанию',
+  element('setAiPerCycle').value === '1', element('setAiPerCycle').value);
+check('настройки без per_day показывают 40 по умолчанию',
+  element('setAiPerDay').value === '40', element('setAiPerDay').value);
+
 if (failures) {
   console.log('\nUI SETTINGS FAILED: ' + failures);
   process.exit(1);
