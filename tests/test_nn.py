@@ -442,6 +442,20 @@ res = json.loads(api.api_neural(json.dumps({"action": "configure",
                                             "freeze": True})))
 check("api сохранил keep_best", res["status"]["keep_best"] is False, res["status"])
 check("api сохранил freeze", res["status"]["freeze"] is True, res["status"])
+res = json.loads(api.api_neural(json.dumps({
+    "action": "configure", "hidden_layers": [24, 12], "activation": "relu",
+    "epochs": 25, "finetune_epochs": 6, "learning_rate": 0.03, "l2": 0.002,
+    "momentum": 0.85, "batch_size": 16, "validation_share": 0.25,
+    "seed": 99})))
+params = (res.get("status") or {}).get("params") or {}
+check("api сохранил архитектуру", params.get("hidden_layers") == [24, 12],
+      params)
+check("api сохранил активацию", params.get("activation") == "relu", params)
+check("api сохранил параметры обучения",
+      params.get("epochs") == 25 and params.get("finetune_epochs") == 6
+      and params.get("learning_rate") == 0.03
+      and params.get("validation_share") == 0.25
+      and params.get("seed") == 99, params)
 res = json.loads(api.api_neural(json.dumps({"action": "rollback",
                                             "sport": "football"})))
 check("api откат отвечает ok", res.get("ok") is True, res)

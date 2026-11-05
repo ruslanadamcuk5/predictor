@@ -37,6 +37,8 @@ OFFLINE = [
     "test_live_tool.py",
     "test_ai.py",
     "test_nn.py",
+    "test_nn_params.py",
+    "test_score_results.py",
     "test_sports_pipeline.py",
     "test_all_sports.py",
     "test_sports_metrics.py",

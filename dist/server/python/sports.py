@@ -301,10 +301,73 @@ def total_unit(sport):
 # --------------------------------------------------------------------------
 
 _SCORE_RE = re.compile(r"(\d+)\s*:\s*(\d+)")
+# Счёт Betcity: «0:2 (25:27, 17:25)» — итог матча, затем партии/сеты.
+_SCORE_WITH_MATCH_RE = re.compile(
+    r"^\s*(\d+)\s*:\s*(\d+)\s*\((.*)\)\s*$", re.S)
 
 
 def score_pairs(text):
     return [(int(a), int(b)) for a, b in _SCORE_RE.findall(str(text or ""))]
+
+
+def split_score_text(text):
+    """Делит строку счёта на счёт матча и счёт периодов.
+
+    «0:2 (25:27, 17:25)» -> ((0, 2), «25:27, 17:25»).
+    Если скобок нет, счёт матча неизвестен: (None, исходная строка).
+    """
+    raw = str(text or "")
+    found = _SCORE_WITH_MATCH_RE.match(raw)
+    if found:
+        match = (int(found.group(1)), int(found.group(2)))
+        return match, found.group(3)
+    return None, raw
+
+
+def combine_score(match_text, periods_text):
+    """Собирает счёт матча и партии в одну строку для проверки.
+
+    Betcity отдаёт итог матча в ``sc_ev``, а счёт партий — в ``sc_inter``.
+    Проверять прогнозы по одному ``sc_inter`` нельзя: у волейбола это
+    очки в партиях, а у футбола — только текущий тайм.
+    """
+    match_text = str(match_text or "").strip()
+    periods_text = str(periods_text or "").strip()
+    if not match_text:
+        return periods_text
+    if not periods_text or match_text == periods_text:
+        return periods_text or match_text
+    # Счёт уже содержит итог матча перед скобками — второй раз не добавляем.
+    if _SCORE_WITH_MATCH_RE.match(periods_text):
+        return periods_text
+    return "%s (%s)" % (match_text, periods_text)
+
+
+def event_score_text(sport, raw):
+    """Итоговый счёт события Betcity.
+
+    У всех командных видов итог матча лежит в ``sc_ev``, а партии,
+    периоды или таймы — в ``sc_inter``. Настольный теннис проверяется
+    отдельно по партиям, поэтому его строка не меняется.
+    """
+    raw = raw or {}
+    sport = normalize_sport(sport)
+    periods_text = str(raw.get("sc_inter") or raw.get("sc") or "").strip()
+    if sport == "table_tennis":
+        return periods_text
+    match_text = str(raw.get("sc_ev") or "").strip()
+    if not match_text:
+        matrix = raw.get("sc_ev_cmx") or {}
+        main = matrix.get("main") or []
+        if main and isinstance(main[0], (list, tuple)) and len(main[0]) >= 2:
+            match_text = "%s:%s" % (main[0][0], main[0][1])
+        periods = matrix.get("ext") or []
+        if periods and not periods_text:
+            periods_text = ", ".join(
+                "%s:%s" % (pair[0], pair[1])
+                for pair in periods
+                if isinstance(pair, (list, tuple)) and len(pair) >= 2)
+    return combine_score(match_text, periods_text)
 
 
 def parse_score(sport, text):
@@ -313,38 +376,84 @@ def parse_score(sport, text):
     Возвращает словарь:
       match    — счёт матча (голы/очки или партии/сеты),
       periods  — счёт периодов/партий/сетов,
+      points   — очки по партиям/сетам (None, если их не было),
       total    — суммарный тотал матча (голы/очки/геймы),
       sets_won — выигранные периоды/партии/сеты,
       winner   — P1 / P2 / DRAW,
       draw     — возможна ли ничья по счёту матча,
+      match_known — счёт матча известен, а не догадка,
       raw      — исходная строка.
+
+    Счёт Betcity бывает двух видов:
+
+      * «3:1 (25:18, 22:25, 25:20, 25:19)» — итог матча и партии;
+      * «25:18, 22:25, 25:20, 25:19» — только партии (live-фид).
+
+    Во втором случае у волейбола и тенниса итог матча считается по
+    выигранным партиям, а не берётся первая пара (иначе 25:27 становится
+    «счётом матча»). Для настольного тенниса и футбола одиночная пара
+    остаётся счётом матча, как и раньше.
     """
     item = profile(sport)
-    pairs = score_pairs(text)
-    if not pairs:
-        return None
-    match = pairs[0]
-    inner = pairs[1:]
     mode = item["score_mode"]
+    match_prefix, inner_text = split_score_text(text)
+    pairs = score_pairs(inner_text)
+    if not pairs and match_prefix is None:
+        return None
+
+    periods = []
+    points = None
+    match_known = True
 
     if mode == "single":
+        # У футбола первая пара — итог матча, скобки — таймы. Таймы не
+        # считаем периодами: тотал матча уже есть в первой паре.
+        match = match_prefix if match_prefix is not None else pairs[0]
         periods = []
         total = match[0] + match[1]
-    else:
-        periods = inner or [match]
-        total = sum(a + b for a, b in periods)
-
-    sets_won = (
-        sum(1 for a, b in periods if a > b),
-        sum(1 for a, b in periods if b > a),
-    )
-    if mode == "sets":
-        # У волейбола и тенниса первый счёт — это уже выигранные партии/сеты.
-        decisive = match
+        sets_won = (1 if match[0] > match[1] else 0,
+                    1 if match[1] > match[0] else 0)
+        points = match
+    elif mode == "periods":
+        periods = pairs
+        if match_prefix is not None:
+            match = match_prefix
+        else:
+            match = (sum(a for a, _b in periods), sum(b for _a, b in periods))
+            match_known = bool(periods)
+        # Итог матча Betcity уже содержит голы/очки всех периодов. Сумма
+        # sc_inter может отставать (идёт текущий период), поэтому тотал
+        # берём из счёта матча, а не из суммы периодов.
+        total = match[0] + match[1]
+        points = match
+        sets_won = (sum(1 for a, b in periods if a > b),
+                    sum(1 for a, b in periods if b > a))
+    else:  # sets: волейбол, теннис, настольный теннис
+        if match_prefix is not None:
+            match = match_prefix
+            periods = pairs
+            if periods:
+                points = (sum(a for a, _b in periods),
+                          sum(b for _a, b in periods))
+                total = sum(a + b for a, b in periods)
+            else:
+                # Есть только выигранные партии — тотал очков неизвестен.
+                total = None
+        elif len(pairs) == 1 and max(pairs[0]) <= 5:
+            # «0:4», «3:1» — только выигранные партии. Сумма 0+4 не тотал.
+            match = pairs[0]
+            periods = []
+            total = None
+        else:
+            periods = pairs
+            points = (sum(a for a, _b in periods),
+                      sum(b for _a, b in periods))
+            total = sum(a + b for a, b in periods)
+            match = (sum(1 for a, b in periods if a > b),
+                     sum(1 for a, b in periods if b > a))
         sets_won = match
-    else:
-        decisive = match
 
+    decisive = match
     if decisive[0] == decisive[1] and item["has_draw"]:
         winner = "DRAW"
         draw = True
@@ -358,10 +467,12 @@ def parse_score(sport, text):
     return {
         "match": match,
         "periods": periods,
+        "points": points,
         "total": total,
         "sets_won": sets_won,
         "winner": winner,
         "draw": draw,
+        "match_known": match_known,
         "raw": str(text or ""),
     }
 
@@ -372,16 +483,55 @@ def orient_score(parsed, flipped):
         return parsed
     if not flipped:
         return parsed
+    points = parsed.get("points")
     return {
         "match": (parsed["match"][1], parsed["match"][0]),
         "periods": [(b, a) for a, b in parsed["periods"]],
+        "points": (points[1], points[0]) if points else None,
         "total": parsed["total"],
         "sets_won": (parsed["sets_won"][1], parsed["sets_won"][0]),
         "winner": {"P1": "P2", "P2": "P1", "DRAW": "DRAW"}.get(
             parsed["winner"], parsed["winner"]),
         "draw": parsed["draw"],
+        "match_known": parsed.get("match_known", True),
         "raw": parsed.get("raw", ""),
     }
+
+
+def _period_complete(sport, pair):
+    """Партия/сет доиграны до конца (а не середина)."""
+    a, b = int(pair[0]), int(pair[1])
+    high, low = max(a, b), min(a, b)
+    sport = normalize_sport(sport)
+    if sport == "table_tennis":
+        return high >= 11 and (high - low) >= 2
+    if sport == "volleyball":
+        # Обычная партия до 25, укороченная решающая — до 15.
+        return (high >= 15 and (high - low) >= 2)
+    if sport == "tennis":
+        return (high >= 6 and (high - low) >= 2) or (high == 7 and low == 6)
+    return True
+
+
+def score_final(sport, parsed):
+    """Счёт похож на финальный, а не на середину партии.
+
+    Нужен для разметки обучающей выборки: частичный счёт нельзя
+    превращать в метки тотала и форы.
+    """
+    if not parsed:
+        return False
+    sport = normalize_sport(sport)
+    mode = profile(sport)["score_mode"]
+    if mode == "sets":
+        wins = max(int(parsed["match"][0]), int(parsed["match"][1]))
+        if sport == "table_tennis":
+            return wins >= 4
+        if wins < 2 or parsed.get("total") is None:
+            return False
+        return all(_period_complete(sport, pair)
+                   for pair in parsed.get("periods") or [])
+    return parsed.get("total") is not None
 
 
 def record_from_score(sport, parsed, flipped=False):

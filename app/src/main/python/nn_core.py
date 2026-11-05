@@ -286,23 +286,25 @@ def labels_for_match(sport, score_text, line=None, handicap=None):
         return []
     match_score = parsed["match"]
     total = parsed.get("total")
-    if total is None:
-        total = match_score[0] + match_score[1]
+    points = parsed.get("points")
     if line is None:
         line = float(sports.default_total(sport))
     line = float(line)
     p1, p2 = int(match_score[0]), int(match_score[1])
+    match_known = bool(parsed.get("match_known", True))
 
-    # Фора: первая команда закрывает линию, если разрыв больше её минуса.
+    # Фора: в волейболе и теннисе она считается по очкам, а не по
+    # выигранным партиям. Если очков нет (пришёл только счёт партий),
+    # голову форы гасим маской, а не размечаем наугад.
     handicap_mask = 0.0
     handicap_label = 0.0
-    if handicap is not None and "handicap" in bets:
+    if handicap is not None and "handicap" in bets and points is not None:
         try:
             h = float(handicap)
         except (TypeError, ValueError):
             h = None
         if h is not None:
-            margin = p1 - p2
+            margin = int(points[0]) - int(points[1])
             if abs(margin + h) > 1e-9:
                 handicap_mask = 1.0
                 handicap_label = 1.0 if (margin + h) > 0 else 0.0
@@ -310,15 +312,22 @@ def labels_for_match(sport, score_text, line=None, handicap=None):
     btts_mask = 1.0 if "btts" in bets else 0.0
     btts_label = 1.0 if (p1 > 0 and p2 > 0) else 0.0
 
+    total_mask = 1.0 if total is not None else 0.0
+    total_label = 0.0
+    if total is not None:
+        total_label = 1.0 if total > line else 0.0
+
     y = [
         1.0 if p1 > p2 else 0.0,
         1.0 if p2 > p1 else 0.0,
-        1.0 if p1 == p2 else 0.0,
-        1.0 if total > line else 0.0,
+        1.0 if (p1 == p2 and match_known) else 0.0,
+        total_label,
         handicap_label,
         btts_label,
     ]
-    m = [1.0, 1.0, 1.0 if has_draw else 0.0, 1.0,
+    m = [1.0 if match_known else 0.0,
+         1.0 if match_known else 0.0,
+         1.0 if has_draw else 0.0, total_mask,
          handicap_mask, btts_mask]
     return [{"y": y, "m": m, "set": 0}]
 
@@ -338,8 +347,11 @@ def sigmoid(value):
 class MLP:
     """Простой многослойный персептрон с сигмоидными выходами."""
 
-    def __init__(self, sizes, seed=7):
+    ACTIVATIONS = ("tanh", "relu", "sigmoid")
+
+    def __init__(self, sizes, seed=7, activation="tanh"):
         self.sizes = list(sizes)
+        self.activation = activation if activation in self.ACTIVATIONS else "tanh"
         rng = random.Random(seed)
         self.weights = []
         self.biases = []
@@ -357,6 +369,21 @@ class MLP:
         self._momentum_b = [[0.0] * len(row) for row in self.biases]
 
     # ---------- прямое распространение ----------
+    def _hidden_activation(self, value):
+        if self.activation == "relu":
+            return value if value > 0.0 else 0.0
+        if self.activation == "sigmoid":
+            return sigmoid(value)
+        return math.tanh(value)
+
+    def _hidden_derivative(self, activated):
+        """Производная по выходу активации (для обратного прохода)."""
+        if self.activation == "relu":
+            return 1.0 if activated > 0.0 else 0.0
+        if self.activation == "sigmoid":
+            return activated * (1.0 - activated)
+        return 1.0 - activated * activated
+
     def forward(self, x):
         acts = [list(x)]
         last = len(self.weights) - 1
@@ -371,7 +398,7 @@ class MLP:
             if index == last:
                 acts.append([sigmoid(v) for v in z])
             else:
-                acts.append([math.tanh(v) for v in z])
+                acts.append([self._hidden_activation(v) for v in z])
         return acts
 
     def predict(self, x):
@@ -429,7 +456,7 @@ class MLP:
                             prev_delta[k] += value * d
                     for k in range(len(prev_delta)):
                         activation = prev_acts[k]
-                        prev_delta[k] *= (1.0 - activation * activation)
+                        prev_delta[k] *= self._hidden_derivative(activation)
                     delta = prev_delta
 
         scale = lr / float(n)
@@ -452,13 +479,15 @@ class MLP:
     # ---------- сохранение ----------
     def state(self):
         return {"sizes": list(self.sizes),
+                "activation": self.activation,
                 "weights": [[[float(v) for v in row] for row in layer]
                             for layer in self.weights],
                 "biases": [[float(v) for v in row] for row in self.biases]}
 
     @classmethod
     def load(cls, data):
-        model = cls(data.get("sizes") or [2, 1])
+        model = cls(data.get("sizes") or [2, 1],
+                    activation=data.get("activation") or "tanh")
         weights = data.get("weights") or []
         biases = data.get("biases") or []
         for index, layer in enumerate(weights):
@@ -654,7 +683,7 @@ def _standardizer_for(model, rows):
     return Standardizer().fit([row["x"] for row in rows])
 
 
-def evaluate_previous(sport, previous, rows):
+def evaluate_previous(sport, previous, rows, share=0.2):
     """Точность прежней модели на той же проверочной выборке.
 
     Сравнивать «старую точность» из прошлого обучения с новой нельзя:
@@ -667,7 +696,7 @@ def evaluate_previous(sport, previous, rows):
     try:
         _spec, heads, _layout = feature_spec(sport)
         ordered = sorted(rows, key=lambda r: r.get("t", ""))
-        _train, val_rows = split_rows(ordered)
+        _train, val_rows = split_rows(ordered, share=share)
         net = MLP.load(previous)
         standardizer = _standardizer_for(previous, _train)
         return evaluate_model(net, standardizer, val_rows, heads)
@@ -675,13 +704,20 @@ def evaluate_previous(sport, previous, rows):
         return None
 
 
-def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=16,
-                seed=7, pause=None, l2=0.001):
+def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
+                seed=7, pause=None, l2=0.001, momentum=0.9,
+                batch_size=32, validation_share=0.2, hidden_layers=None,
+                activation="tanh"):
     """Обучает (или дообучает) модель вида спорта.
 
     rows — список {"x": [...], "y": [...], "m": [...]}. previous — ранее
     обученная модель (dict), чтобы обучение продолжалось, а не начиналось
     с нуля. Возвращает (model_dict, report).
+
+    Архитектура (hidden_layers), активация и все параметры обучения
+    приходят из настроек. Если архитектура или активация изменились,
+    старая модель не загружается: веса другой формы бессмысленны, вид
+    обучается заново.
 
     Точность считается по отложенным матчам, а веса берутся с лучшей
     эпохи: сеть не «дообучается» до состояния, где она выучила шум.
@@ -691,19 +727,45 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=16,
     if not rows:
         return previous, {"ok": False, "error": "Нет данных"}
 
+    if hidden_layers is None:
+        hidden_layers = [hidden] if hidden else [16]
+    clean_layers = []
+    for value in hidden_layers:
+        try:
+            number = int(round(float(value)))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= number <= 512:
+            clean_layers.append(number)
+        if len(clean_layers) >= 4:
+            break
+    hidden_layers = clean_layers or [16]
+    activation = activation if activation in MLP.ACTIVATIONS else "tanh"
+    try:
+        epochs = max(1, min(300, int(epochs)))
+    except (TypeError, ValueError):
+        epochs = 12
+    try:
+        batch_size = max(1, min(512, int(batch_size)))
+    except (TypeError, ValueError):
+        batch_size = 32
+    try:
+        validation_share = max(0.05, min(0.5, float(validation_share)))
+    except (TypeError, ValueError):
+        validation_share = 0.2
+
     rows = sorted(rows, key=lambda r: r.get("t", ""))
     size = len(rows)
-    train_rows, val_rows = split_rows(rows)
+    train_rows, val_rows = split_rows(rows, share=validation_share)
     standardizer = Standardizer().fit([row["x"] for row in train_rows])
     input_size = len(train_rows[0]["x"])
     output_size = len(heads)
+    sizes = [input_size] + hidden_layers + [output_size]
 
-    model = None
-    if previous and previous.get("sizes") == [input_size, hidden, output_size]:
-        model = MLP.load(previous)
-    if model is None:
-        model = MLP([input_size, hidden, output_size], seed=seed)
-        epochs = max(epochs, 12)
+    reuse = bool(previous and previous.get("sizes") == sizes and
+                 (previous.get("activation") or "tanh") == activation)
+    model = MLP.load(previous) if reuse else MLP(
+        sizes, seed=seed, activation=activation)
 
     prepared = [(standardizer.transform(row["x"]), row["y"], row["m"])
                 for row in train_rows]
@@ -716,10 +778,9 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=16,
     best_epoch = 0
     for epoch in range(epochs):
         rng.shuffle(prepared)
-        batch_size = 32
         for start in range(0, len(prepared), batch_size):
             batch = prepared[start:start + batch_size]
-            loss = model.train_batch(batch, lr=lr, l2=l2)
+            loss = model.train_batch(batch, lr=lr, momentum=momentum, l2=l2)
             step += 1
             # Периодически отпускаем интерпретатор: на телефоне обучение
             # не должно блокировать остальной движок.
@@ -762,10 +823,21 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=16,
             "winner_accuracy": metrics.get("winner_accuracy", 0.0),
             "over_accuracy": metrics.get("over_accuracy", 0.0),
             "head_accuracy": metrics.get("head_accuracy") or {},
+            "architecture": list(hidden_layers),
+            "activation": activation,
+            "learning_rate": lr,
+            "l2": l2,
+            "momentum": momentum,
+            "batch_size": batch_size,
+            "validation_share": validation_share,
+            "seed": seed,
+            "finetuned": bool(reuse),
         },
     })
     return state, {"ok": True, "metrics": metrics, "epochs": epochs,
-                   "best_epoch": best_epoch or epochs}
+                   "best_epoch": best_epoch or epochs,
+                   "architecture": list(hidden_layers),
+                   "activation": activation, "finetuned": bool(reuse)}
 
 
 def predict_probs(model, features):

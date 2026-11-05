@@ -2339,6 +2339,44 @@ function renderSettings(s) {
   }
   const nnSets = $('setNnSets');
   if (nnSets) nnSets.value = String(num(neural.sets) || 3);
+  const nnParams = neural.params || neural;
+  if ($('setNnArch')) {
+    const layers = nnParams.hidden_layers;
+    $('setNnArch').value = Array.isArray(layers)
+      ? layers.join(',') : String(layers || '16');
+  }
+  if ($('setNnActivation')) {
+    $('setNnActivation').value = nnParams.activation || 'tanh';
+  }
+  if ($('setNnEpochs')) {
+    $('setNnEpochs').value = String(num(nnParams.epochs) || 12);
+  }
+  if ($('setNnFinetune')) {
+    $('setNnFinetune').value = String(num(nnParams.finetune_epochs) || 4);
+  }
+  if ($('setNnLr')) {
+    const lr = num(nnParams.learning_rate);
+    $('setNnLr').value = String(lr > 0 ? lr : 0.05);
+  }
+  if ($('setNnL2')) {
+    const l2 = num(nnParams.l2);
+    $('setNnL2').value = String(nnParams.l2 === 0 ? 0 : (l2 || 0.001));
+  }
+  if ($('setNnMomentum')) {
+    const momentum = num(nnParams.momentum);
+    $('setNnMomentum').value =
+      String(nnParams.momentum === 0 ? 0 : (momentum || 0.9));
+  }
+  if ($('setNnBatch')) {
+    $('setNnBatch').value = String(num(nnParams.batch_size) || 32);
+  }
+  if ($('setNnValidation')) {
+    $('setNnValidation').value =
+      String(Math.round((num(nnParams.validation_share) || 0.2) * 100));
+  }
+  if ($('setNnSeed')) {
+    $('setNnSeed').value = String(Math.round(num(nnParams.seed) || 7));
+  }
   if (Array.isArray(neural.sports)) {
     setNnSports(neural.sports);
   } else {
@@ -2505,6 +2543,13 @@ function collectSettings() {
   const perSport = num($('setPerSport').value);
   s.max_matches_per_sport = perSport === 0
     ? 0 : Math.max(1, Math.min(50, perSport || 10));
+  const nnNum = (id, fallback, low, high, integer) => {
+    const field = $(id);
+    const raw = field && field.value !== '' ? Number(field.value) : NaN;
+    let value = Number.isFinite(raw) ? raw : fallback;
+    if (integer) value = Math.round(value);
+    return Math.max(low, Math.min(high, value));
+  };
   s.neural = {
     enabled: $('setNnEnabled') ? $('setNnEnabled').checked : false,
     auto_train: $('setNnAutoTrain') ? $('setNnAutoTrain').checked : true,
@@ -2514,6 +2559,16 @@ function collectSettings() {
     min_confidence: Math.max(0.5, Math.min(0.95,
       (num($('setNnConfidence').value) || 55) / 100)),
     sets: Math.max(1, Math.min(5, num($('setNnSets').value) || 3)),
+    hidden_layers: $('setNnArch') ? $('setNnArch').value : '16',
+    activation: $('setNnActivation') ? $('setNnActivation').value : 'tanh',
+    epochs: nnNum('setNnEpochs', 12, 1, 300, true),
+    finetune_epochs: nnNum('setNnFinetune', 4, 1, 150, true),
+    learning_rate: nnNum('setNnLr', 0.05, 0.001, 0.5, false),
+    l2: nnNum('setNnL2', 0.001, 0, 0.05, false),
+    momentum: nnNum('setNnMomentum', 0.9, 0, 0.99, false),
+    batch_size: nnNum('setNnBatch', 32, 4, 256, true),
+    validation_share: nnNum('setNnValidation', 20, 10, 40, true) / 100,
+    seed: nnNum('setNnSeed', 7, 1, 999999, true),
     sports: nnSportIds(),
     markets: nnMarketsMap(),
   };

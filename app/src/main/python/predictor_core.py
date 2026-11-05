@@ -411,6 +411,27 @@ class BotSettings:
             "keep_best": True,
             # заморозить обучение: веса больше не меняются автоматически
             "freeze": False,
+            # ----- параметры сети и обучения -----
+            # архитектура: число нейронов в скрытых слоях
+            "hidden_layers": [16],
+            # активация скрытого слоя: tanh / relu / sigmoid
+            "activation": "tanh",
+            # эпох при первом обучении с нуля
+            "epochs": 12,
+            # эпох при дообучении уже готовой модели
+            "finetune_epochs": 4,
+            # скорость обучения
+            "learning_rate": 0.05,
+            # L2-регуляризация весов
+            "l2": 0.001,
+            # момент (инерция) оптимизатора
+            "momentum": 0.9,
+            # размер мини-батча
+            "batch_size": 32,
+            # доля свежих матчей для проверки
+            "validation_share": 0.2,
+            # зерно инициализации и перемешивания
+            "seed": 7,
         },
         # AI-ассистент: облачная модель для объяснений и подсказок
         "ai": {
@@ -1403,11 +1424,17 @@ class ResultChecker:
         return event_finished(raw)
 
     def check_match_prediction_success(self, prediction, parsed, sport):
-        """Проверка матчевой ставки (победитель, тотал, фора, ОЗ)."""
+        """Проверка матчевой ставки (победитель, тотал, фора, ОЗ).
+
+        Ничего не додумываем: если счёт матча или тотал очков неизвестен
+        (например, Betcity прислал только выигранные партии «0:4»),
+        результат остаётся непроверенным, а не получает ложную «зашла».
+        """
         if not parsed:
             return None
         match = parsed["match"]
-        total = parsed["total"]
+        total = parsed.get("total")
+        points = parsed.get("points")
         kind = prediction.get("kind", "")
         side = str(prediction.get("expected_side") or "")
         verdict = str(prediction.get("verdict", ""))
@@ -1438,6 +1465,8 @@ class ResultChecker:
         side = aliases.get(side, side)
 
         if kind == "winner":
+            if not parsed.get("match_known", True):
+                return None
             if side == "X":
                 success = match[0] == match[1]
             elif side == "P2":
@@ -1445,13 +1474,19 @@ class ResultChecker:
             else:
                 success = match[0] > match[1]
         elif kind == "total":
+            if total is None:
+                return None
             threshold = prediction.get("threshold")
             if threshold is None:
                 threshold = sports.default_total(sport)
             success = (total > threshold) if side == "over" else (total < threshold)
         elif kind == "handicap":
+            if points is None:
+                return None
             value = float(prediction.get("handicap") or 0)
-            margin = match[0] - match[1]
+            # В волейболе и теннисе фора считается по очкам, а не по
+            # выигранным партиям: 3:1 и 95:90 — разные разрывы.
+            margin = points[0] - points[1]
             if side == "p2" or side == "P2":
                 adjusted = -margin + value
             else:
@@ -1815,7 +1850,7 @@ class ResultChecker:
         from_cache = bool(pred_data.get("resolved_from_cache"))
         dirty = False
         if raw is not None:
-            score_str = raw.get("sc_inter") or raw.get("sc") or ""
+            score_str = sports.event_score_text(sport, raw)
             finished = self.is_event_finished(raw)
             if score_str and pred_data.get("last_score") != score_str:
                 pred_data["last_score"] = score_str
@@ -2509,7 +2544,7 @@ class PredictorEnsemble:
                         team2 = raw.get("name_at") or ""
                         if not team1 or not team2:
                             continue
-                        score = raw.get("sc_inter") or raw.get("sc") or ""
+                        score = sports.event_score_text(sport_id, raw)
                         date = raw.get("date_ev_str") or ""
                         if not score and not raw.get("time_type_status"):
                             continue
@@ -2726,8 +2761,12 @@ class PredictorEnsemble:
                 try:
                     if not event_finished(raw):
                         continue
-                    score = raw.get("sc_inter") or raw.get("sc") or ""
+                    score = sports.event_score_text(sport_id, raw)
                     if not score:
+                        continue
+                    parsed = sports.parse_score(sport_id, score)
+                    if sport_id != "table_tennis" and \
+                            not sports.score_final(sport_id, parsed):
                         continue
                     key = (sport_id, raw.get("name_ht", ""), raw.get("name_at", ""))
                     result[key] = score
@@ -2742,6 +2781,10 @@ class PredictorEnsemble:
                     continue
                 if not (entry.get("finished") or entry.get("complete")):
                     continue
+                if sport_id != "table_tennis":
+                    parsed = sports.parse_score(sport_id, score)
+                    if not sports.score_final(sport_id, parsed):
+                        continue
                 key = (sport_id, entry.get("team1", ""), entry.get("team2", ""))
                 result.setdefault(key, score)
             except Exception:

@@ -109,6 +109,16 @@ element('setNnFreeze').checked = false;
 element('setNnMinSamples').value = '75';
 element('setNnConfidence').value = '55';
 element('setNnSets').value = '3';
+element('setNnArch').value = '32,16';
+element('setNnActivation').value = 'relu';
+element('setNnEpochs').value = '40';
+element('setNnFinetune').value = '6';
+element('setNnLr').value = '0.02';
+element('setNnL2').value = '0.002';
+element('setNnMomentum').value = '0.85';
+element('setNnBatch').value = '16';
+element('setNnValidation').value = '25';
+element('setNnSeed').value = '42';
 element('setOdds').checked = true;
 element('setVerbose').checked = false;
 element('setBetSize').value = '2';
@@ -141,6 +151,16 @@ check('лимит матчей из формы не перезаписывает
   payload.max_matches_per_sport === 9, payload.max_matches_per_sport);
 check('нейросеть из формы не перезаписывается блоком ИИ',
   payload.neural.enabled === true && payload.neural.min_samples === 75,
+  payload.neural);
+check('архитектура сети сохраняется из выпадающего списка',
+  payload.neural.hidden_layers === '32,16', payload.neural.hidden_layers);
+check('активация сети сохраняется',
+  payload.neural.activation === 'relu', payload.neural.activation);
+check('параметры обучения сохраняются',
+  payload.neural.epochs === 40 && payload.neural.finetune_epochs === 6
+  && payload.neural.learning_rate === 0.02 && payload.neural.l2 === 0.002
+  && payload.neural.momentum === 0.85 && payload.neural.batch_size === 16
+  && payload.neural.validation_share === 0.25 && payload.neural.seed === 42,
   payload.neural);
 check('ИИ сохраняется вместе с остальными настройками',
   payload.ai.model === 'model-x' && payload.ai.api_key === 'key-x',

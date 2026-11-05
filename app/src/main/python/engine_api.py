@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.23.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -612,7 +612,11 @@ class Engine:
             core.events.add("WARNING", "Нейросеть: данные обучения сброшены")
         elif action in ("configure", "settings"):
             patch = {}
-            for key in ("min_samples", "min_confidence", "sets"):
+            for key in ("min_samples", "min_confidence", "sets",
+                        "hidden_layers", "activation", "epochs",
+                        "finetune_epochs", "learning_rate", "l2",
+                        "momentum", "batch_size", "validation_share",
+                        "seed"):
                 if key in options:
                     patch[key] = options.get(key)
             if "sports" in options:

@@ -28,6 +28,7 @@ import sports
 SAMPLES_FILE = "nn_samples.jsonl"
 PENDING_FILE = "nn_pending.json"
 MODELS_FILE = "nn_model.json"
+SCORE_FIX_FILE = "nn_score_fix_v2.json"
 
 MAX_SAMPLES_PER_SPORT = 1500
 MAX_PENDING = 800
@@ -38,6 +39,22 @@ PLATEAU_ROUNDS = 3            # раундов без роста точност�
 PLATEAU_NEW_SHARE = 0.25      # доля новых примеров, чтобы попробовать снова
 IMPROVE_EPS = 0.005           # минимальный прирост точности, чтобы считать улучшением
 HISTORY_LIMIT = 30            # сколько точек истории храним по виду
+
+# Параметры сети и обучения. Значения проверяются на входе: из веб-формы
+# может прийти строка, пустое поле или число вне диапазона.
+NN_ACTIVATIONS = ("tanh", "relu", "sigmoid")
+NN_LAYERS_LIMIT = 4
+NN_LAYERS_NEURONS = 512
+NN_PARAM_LIMITS = {
+    "epochs": (1, 300),
+    "finetune_epochs": (1, 150),
+    "learning_rate": (0.001, 0.5),
+    "l2": (0.0, 0.05),
+    "momentum": (0.0, 0.99),
+    "batch_size": (4, 256),
+    "validation_share": (0.1, 0.4),
+    "seed": (1, 999999),
+}
 
 
 def _now():
@@ -99,6 +116,24 @@ class NeuralTrainer:
             cfg["sets"] = max(1, min(5, int(cfg.get("sets") or 3)))
         except Exception:
             cfg["sets"] = 3
+        cfg["hidden_layers"] = self._clean_layers(cfg.get("hidden_layers"))
+        cfg["activation"] = self._clean_activation(cfg.get("activation"))
+        defaults = {"epochs": 12, "finetune_epochs": 4, "batch_size": 32,
+                    "seed": 7, "learning_rate": 0.05, "l2": 0.001,
+                    "momentum": 0.9, "validation_share": 0.2}
+        for key, default in defaults.items():
+            low, high = NN_PARAM_LIMITS[key]
+            try:
+                value = float(cfg.get(key))
+                if not math.isfinite(value):
+                    value = float(default)
+            except (TypeError, ValueError):
+                value = float(default)
+            if key in ("epochs", "finetune_epochs", "batch_size", "seed"):
+                value = int(round(value))
+            else:
+                value = round(value, 6)
+            cfg[key] = max(low, min(high, value))
         cfg["enabled"] = bool(cfg.get("enabled"))
         cfg["auto_train"] = bool(cfg.get("auto_train"))
         cfg["keep_best"] = bool(cfg.get("keep_best", True))
@@ -162,6 +197,33 @@ class NeuralTrainer:
                 result.append(sport_id)
         return result
 
+    @staticmethod
+    def _clean_layers(value):
+        """Скрытые слои: список нейронов, например [32, 16]."""
+        if isinstance(value, str):
+            parts = [part for part in value.replace("x", ",")
+                     .replace("х", ",").replace(";", ",").split(",")]
+        elif isinstance(value, (list, tuple)):
+            parts = list(value)
+        else:
+            parts = [value]
+        layers = []
+        for part in parts:
+            try:
+                number = int(round(float(part)))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= number <= NN_LAYERS_NEURONS:
+                layers.append(number)
+            if len(layers) >= NN_LAYERS_LIMIT:
+                break
+        return layers or [16]
+
+    @staticmethod
+    def _clean_activation(value):
+        text = str(value or "").strip().lower()
+        return text if text in NN_ACTIVATIONS else "tanh"
+
     def enabled(self, sport=None):
         cfg = self.config()
         if not cfg["enabled"]:
@@ -214,6 +276,53 @@ class NeuralTrainer:
                     self._backups = data.get("backups") or {}
         except Exception as exc:
             self._log("Нейросеть: не удалось прочитать модели: %s" % exc)
+        self._migrate_bad_scores()
+
+    def _migrate_bad_scores(self):
+        """Один раз убирает выборку, размеченную по неверному счёту.
+
+        До версии 1.23 проверка матчей брала первую пару ``sc_inter`` за
+        счёт матча. У футбола это текущий тайм, у волейбола и тенниса —
+        одна партия/сет. Метки победителя и тотала из таких строк
+        poisoned обучение, поэтому затронутые виды начинают заново.
+        Настольный теннис и виды с периодами (хоккей, баскетбол) не
+        затронуты: их счёт совпадал с итогом матча.
+        """
+        marker = self._path(SCORE_FIX_FILE)
+        if os.path.exists(marker):
+            return
+        affected = ("volleyball", "tennis", "football")
+        dropped = 0
+        models_dropped = 0
+        for sport in affected:
+            rows = self._samples.get(sport)
+            if rows:
+                dropped += len(rows)
+                self._samples.pop(sport, None)
+            if sport in self._models:
+                self._models.pop(sport, None)
+                models_dropped += 1
+            if sport in self._backups:
+                self._backups.pop(sport, None)
+        try:
+            if dropped:
+                self._rewrite_samples()
+            if models_dropped:
+                self._save_models()
+            _atomic_write(marker, json.dumps({
+                "at": _now(),
+                "reason": "score parser fix: match score from sc_ev",
+                "sports": list(affected),
+                "samples_dropped": dropped,
+                "models_dropped": models_dropped,
+            }, ensure_ascii=False))
+        except Exception as exc:
+            self._log("Нейросеть: миграция выборки не удалась: %s" % exc)
+            return
+        if dropped or models_dropped:
+            self._log("Нейросеть: удалена выборка, размеченная по неверному "
+                      "счёту (%d примеров, %d моделей): волейбол, теннис, "
+                      "футбол" % (dropped, models_dropped))
 
     def _save_pending(self):
         try:
@@ -361,6 +470,9 @@ class NeuralTrainer:
                     score_text = str(record.get("last_score") or "")
                 usable = bool(score_text) and (
                     from_line or self._score_complete(sport, score_text))
+                if usable and from_line and sport != "table_tennis":
+                    parsed = sports.parse_score(sport, score_text)
+                    usable = sports.score_final(sport, parsed)
                 if not usable:
                     if self._too_old(record, now):
                         expired += 1
@@ -389,17 +501,23 @@ class NeuralTrainer:
 
     @staticmethod
     def _score_complete(sport, score_text):
-        """Счёт финальный? Для настольного тенниса — 4 победы в партиях."""
+        """Счёт финальный (матч доигран, а не середина партии).
+
+        Для командных видов с периодами (футбол, хоккей, баскетбол)
+        последний счёт без отметки «матч завершён» не считается финальным:
+        по нему нельзя отличить середину матча от конца.
+        """
         sport = sports.normalize_sport(sport)
-        if sport != "table_tennis":
+        if sports.profile(sport)["score_mode"] != "sets":
             return False
-        wins1 = wins2 = 0
-        for p1, p2 in nn_core.tt_sets(score_text):
-            if p1 > p2:
-                wins1 += 1
-            elif p2 > p1:
-                wins2 += 1
-        return wins1 >= 4 or wins2 >= 4
+        parsed = sports.parse_score(sport, score_text)
+        if not parsed:
+            return False
+        if sport == "volleyball" and max(parsed["match"]) < 3:
+            # Без отметки «матч завершён» счёт 2:0/2:1 может быть серединой
+            # матча до трёх побед. Не размечаем его как финал.
+            return False
+        return sports.score_final(sport, parsed)
 
     @staticmethod
     def _too_old(record, now=None):
@@ -595,7 +713,17 @@ class NeuralTrainer:
                 try:
                     model, report = nn_core.train_model(
                         sport, rows, previous=previous,
-                        epochs=12 if previous is None else 4, pause=self._pause)
+                        epochs=cfg["epochs"] if previous is None
+                        else cfg["finetune_epochs"],
+                        lr=cfg["learning_rate"],
+                        l2=cfg["l2"],
+                        momentum=cfg["momentum"],
+                        batch_size=cfg["batch_size"],
+                        validation_share=cfg["validation_share"],
+                        seed=cfg["seed"],
+                        hidden_layers=cfg["hidden_layers"],
+                        activation=cfg["activation"],
+                        pause=self._pause)
                 except Exception as exc:
                     self._log("Нейросеть: обучение %s не удалось: %s" %
                               (sports.short_name(sport), exc))
@@ -606,7 +734,9 @@ class NeuralTrainer:
                 new_meta["updated_at"] = _now()
                 new_accuracy = float(new_meta.get("accuracy") or 0.0)
                 # Прежнюю модель проверяем на ТОЙ ЖЕ отложенной выборке.
-                old_metrics = nn_core.evaluate_previous(sport, previous, rows)
+                old_metrics = nn_core.evaluate_previous(
+                    sport, previous, rows,
+                    share=cfg["validation_share"])
                 old_accuracy = float(old_metrics.get("accuracy")) \
                     if old_metrics else None
                 history = self._history(previous)
@@ -921,6 +1051,9 @@ class NeuralTrainer:
                 "val_samples": int(meta.get("val_samples") or 0),
                 "best_epoch": int(meta.get("best_epoch") or 0),
                 "epochs": int(meta.get("epochs") or 0),
+                "architecture": list(meta.get("architecture") or []),
+                "activation": meta.get("activation") or "",
+                "finetuned": bool(meta.get("finetuned")),
                 "trained_at": meta.get("updated_at") or "",
                 "selected": sport in selected,
                 "markets": nn_core.market_kinds(sport),
@@ -973,6 +1106,19 @@ class NeuralTrainer:
             "min_samples": cfg["min_samples"],
             "min_confidence": cfg["min_confidence"],
             "sets": cfg["sets"],
+            "params": {
+                "hidden_layers": list(cfg["hidden_layers"]),
+                "activation": cfg["activation"],
+                "epochs": cfg["epochs"],
+                "finetune_epochs": cfg["finetune_epochs"],
+                "learning_rate": cfg["learning_rate"],
+                "l2": cfg["l2"],
+                "momentum": cfg["momentum"],
+                "batch_size": cfg["batch_size"],
+                "validation_share": cfg["validation_share"],
+                "seed": cfg["seed"],
+            },
+            "activations": list(NN_ACTIVATIONS),
             "sports_selected": list(selected),
             "market_labels": nn_core.MARKET_LABELS,
             "total_samples": total_samples,

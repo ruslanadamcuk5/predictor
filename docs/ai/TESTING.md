@@ -159,7 +159,7 @@ python -m http.server 8765 --bind 127.0.0.1   # из tools/ui_harness
 Требуется arm64 Android 7.0+ (или x86_64 эмулятор).
 
 ```powershell
-adb install -r ..\Predictor-1.22.apk
+adb install -r ..\Predictor-1.23.apk
 adb logcat -c
 adb shell am start -n by.betcity.predictor/.MainActivity
 adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
@@ -168,7 +168,7 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 Чек-лист:
 
 01. Приложение запускается, статус-бар скрыт.
-02. Панель показывает версию 1.22, активный вид и число матчей во всех видах.
+02. Панель показывает версию 1.23, активный вид и число матчей во всех видах.
 03. «Проверить» возвращает Betcity: ok и суммарное число матчей; в сводке есть
     `sports` и `by_sport` для нескольких видов.
 04. Переключение всех 6 видов не роняет приложение и не останавливает анализ.
@@ -183,7 +183,9 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
     - правило сохраняется и остаётся после перезапуска;
     - «Тест на линии» не падает.
 08. Переключение вида не удаляет правила других видов.
-09. Результаты: фильтры по виду, дате, поиску, статусу работают.
+09. Результаты: фильтры по виду, дате, поиску, статусу работают. Матч с
+    итогом `0:2 (25:27, 17:25)` показывается как `0:2`, тотал — 42, а не
+    `25:27` и не 4.
 10. Статистика: разбивка по видам совпадает с результатами.
 11. Анализатор: фильтры скрываются по виду; «В конструктор» предлагает новое
     правило или существующее; условие появляется в редакторе, после сохранения
@@ -219,7 +221,11 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
     - «Заморозить обучение» останавливает автоматическое дообучение, но
       кнопка «Обучить сейчас» работает;
     - «Сбросить» очищает примеры и модели, счётчики обнуляются;
-    - обучение продолжается при остановленном движке (разметка идёт).
+    - обучение продолжается при остановленном движке (разметка идёт);
+    - **параметры сети**: в карточке видны архитектура (7 пресетов),
+      активация и числовые поля с диапазонами; после сохранения значения
+      остаются; смена архитектуры или активации запускает обучение заново,
+      а не загружает несовместимые веса.
 14. AI-ассистент:
     - в настройках появляются чипы провайдеров, поля ключа и лимитов, кнопка
       «Проверить подключение»;
@@ -261,14 +267,14 @@ adb logcat | Select-String -Pattern "python|chaquopy|betcity|Predictor"
 ## 7. Проверка APK
 
 ```powershell
-Copy-Item app\build\outputs\apk\release\app-release.apk ..\Predictor-1.22.apk -Force
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.22.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.22.apk
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Predictor-1.23.apk -Force
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.23.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.23.apk
 ```
 
 Ожидается:
 
-- `versionCode 23`, `versionName 1.22`;
+- `versionCode 24`, `versionName 1.23`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;
@@ -276,13 +282,13 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.22.apk
 - в ZIP есть `assets/www/app.js`, `assets/www/docs.js` и
   `assets/chaquopy/app.imy`;
 - в `app.imy` есть `sports.py` и `rule_advisor.py`, а `engine_api.py`
-  содержит строку `1.22.0` и `score_cache` (Chaquopy 17 пакует исходники,
+  содержит строку `1.23.0` и `score_cache` (Chaquopy 17 пакует исходники,
   не `.pyc`).
 
 Проверка содержимого:
 
 ```powershell
-python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.22.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
+python -c "import io,zipfile,hashlib; z=zipfile.ZipFile(r'..\Predictor-1.23.apk'); print(sorted(n for n in z.namelist() if n.startswith('assets/'))[:20])"
 ```
 
 ## 8. Что считается неудачей
