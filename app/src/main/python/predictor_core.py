@@ -1588,6 +1588,58 @@ class ResultChecker:
                 wins, len(tracked), wins / len(tracked) * 100))
         return base.strip() + "\n".join(lines) + "\n" + separator
 
+    @staticmethod
+    def _zero_match_result(result):
+        """Матчевый итог «0:0» — это отсутствие результата, а не счёт."""
+        if str((result or {}).get("target") or "") != "match":
+            return False
+        score = str((result or {}).get("score") or "").replace(" ", "")
+        return score == "0:0"
+
+    def _repair_zero_match_results(self):
+        """Убирает ложные результаты «0:0» у волейбола и тенниса.
+
+        Раньше событие, помеченное Betcity завершённым до начала игры,
+        получало счёт 0:0 и прогноз на победителя тут же проверялся как
+        проигранный. Возвращаем такие записи в состояние «ждёт результат»
+        и восстанавливаем исходный текст сообщения.
+        """
+        dirty = False
+        for pred_data in list(self.telegram.sent_predictions.values()):
+            # Только явно записанный вид спорта: у старых записей поля нет,
+            # и принимать за волейбол текущий вид из настроек нельзя —
+            # у футбола счёт 0:0 настоящий.
+            sport = sports.normalize_sport(pred_data.get("sport") or "")
+            if sport not in ("volleyball", "tennis"):
+                continue
+            if not pred_data.get("result_checked"):
+                continue
+            removed = False
+            for field in ("set_results", "ai_results"):
+                items = pred_data.get(field) or []
+                kept = [item for item in items
+                        if not self._zero_match_result(item)]
+                if len(kept) != len(items):
+                    pred_data[field] = kept
+                    removed = True
+            if not removed:
+                continue
+            pred_data["result_checked"] = False
+            pred_data.pop("result", None)
+            pred_data.pop("checked_at", None)
+            remaining = pred_data.get("set_results") or []
+            text = self.build_original_message(pred_data)
+            if remaining:
+                text = self.format_result_message(
+                    text, remaining, pred_data.get("last_score") or "")
+            if self.telegram.edit_message(pred_data.get("message_id"), text):
+                pred_data["original_message"] = text
+            dirty = True
+            logger.info("Результат 0:0 отменён: %s — %s",
+                        pred_data.get("team1"), pred_data.get("team2"))
+        if dirty:
+            self.telegram.save_sent_predictions()
+
     def check_pending_predictions(self):
         """Проверяет прогнозы по финальным результатам.
 
@@ -1596,6 +1648,7 @@ class ResultChecker:
         увиденному счёту — иначе половина прогнозов оставалась
         непроверенной навсегда.
         """
+        self._repair_zero_match_results()
         snapshot = list(self.telegram.sent_predictions.items())
         if not snapshot:
             return
@@ -1873,6 +1926,16 @@ class ResultChecker:
         parsed = sports.parse_score(sport, score_str)
         if not parsed:
             return
+        # «0:0» у волейбола и тенниса — это ещё не сыгранный матч, а не
+        # финальный счёт: в партийном виде спорта победитель не может не
+        # выиграть ни одной партии. Betcity иногда помечает такое событие
+        # завершённым до начала игры — без этой проверки прогноз на
+        # победителя получал ложное «не зашла». Счёт «3:1» без очков
+        # партий остаётся проверяемым: победитель по партиям известен.
+        if sport in ("volleyball", "tennis"):
+            match = tuple(parsed.get("match") or (0, 0))
+            if match == (0, 0):
+                return
 
         results = []
         for pred in pred_data.get("predictions") or []:

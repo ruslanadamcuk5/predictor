@@ -39,13 +39,13 @@ def js(raw):
 
 print("=== версия/состояние ===")
 v = js(api.api_version())
-check("версия", v["version"] == "1.23.0", str(v))
+check("версия", v["version"] == "1.24.0", str(v))
 check("data_dir создан", os.path.isdir(v["data_dir"]), v["data_dir"])
 
 st = js(api.api_state())
 check("state содержит engine_running", "engine_running" in st)
 check("state содержит stats", isinstance(st.get("stats"), dict))
-check("state содержит version", st.get("version") == "1.23.0")
+check("state содержит version", st.get("version") == "1.24.0")
 
 diag = api.engine()._sync_diagnostics(
     {"table_tennis": [{"id": "r1", "enabled": True}]})

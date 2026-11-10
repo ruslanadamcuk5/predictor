@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = tempfile.mkdtemp(prefix="predictor_score_results_")
@@ -129,6 +130,72 @@ check("волейбол: победитель по партиям известе
           {"kind": "winner", "expected_side": "П2"}, parsed,
           "volleyball")["success"] is True)
 
+# 0:0 — это не финальный счёт волейбольного матча. Betcity иногда помечает
+# событие завершённым до игры; прогноз не должен получать «не зашла».
+zero = sports.parse_score("volleyball", "0:0")
+check("волейбол: 0:0 не считается финальным счётом",
+      sports.score_final("volleyball", zero) is False, zero)
+
+pred_zero = core.PredictorEnsemble(settings=core.BotSettings())
+bot_zero = pred_zero.telegram
+zero_preds = [{"target": "match", "label": "Матч (П1 / П2)",
+               "kind": "winner", "expected_side": "П2", "verdict": "П2",
+               "confidence_val": 0.6, "models_info": "test"}]
+mid_zero = bot_zero.send_message("test")
+pid_zero = bot_zero.mark_prediction_sent(
+    "Ноль-А", "Ноль-Б", "2026-11-10 19:30", zero_preds, mid_zero,
+    "Лига", {}, sport="volleyball")
+zero_raw = {
+    "name_ht": "Ноль-А", "name_at": "Ноль-Б",
+    "sc_ev": "0:0", "sc_inter": "", "status_ev": 4,
+    "time_type_status": -1, "time_name": "Матч завершён",
+    "date_ev_str": "10.11.2026 19:30",
+}
+pred_zero.result_checker._check_match_predictions(
+    pid_zero, bot_zero.sent_predictions[pid_zero], "volleyball",
+    {("volleyball", "Ноль-А", "Ноль-Б"): zero_raw})
+zero_data = bot_zero.sent_predictions[pid_zero]
+check("волейбол: 0:0 не закрывает прогноз",
+      not zero_data.get("result_checked") and
+      not (zero_data.get("set_results") or []), zero_data)
+
+# Уже сохранённый ложный результат «0:0» отменяется при следующей проверке.
+zero_data["result_checked"] = True
+zero_data["set_results"] = [{"target": "match", "kind": "winner",
+                             "score": "0:0", "total": None,
+                             "success": False, "verdict": "П2"}]
+pred_zero.result_checker._repair_zero_match_results()
+check("волейбол: сохранённый ложный 0:0 удалён",
+      not zero_data.get("result_checked") and
+      not (zero_data.get("set_results") or []), zero_data)
+check("волейбол: сообщение снова без блока результата",
+      "РЕЗУЛЬТАТЫ" not in (zero_data.get("original_message") or ""),
+      zero_data.get("original_message"))
+
+# Итог «3:1» без очков партий — победитель известен, прогноз проверяется.
+final_preds = [{"target": "match", "label": "Матч (П1 / П2)",
+                "kind": "winner", "expected_side": "П1", "verdict": "П1",
+                "confidence_val": 0.6, "models_info": "test"}]
+mid_final = bot_zero.send_message("test")
+pid_final = bot_zero.mark_prediction_sent(
+    "Финал-А", "Финал-Б", "2026-11-10 20:00", final_preds, mid_final,
+    "Лига", {}, sport="volleyball")
+final_raw = {
+    "name_ht": "Финал-А", "name_at": "Финал-Б",
+    "sc_ev": "3:1", "sc_inter": "", "status_ev": 4,
+    "time_type_status": -1, "time_name": "Матч завершён",
+    "date_ev_str": "10.11.2026 20:00",
+}
+pred_zero.result_checker._check_match_predictions(
+    pid_final, bot_zero.sent_predictions[pid_final], "volleyball",
+    {("volleyball", "Финал-А", "Финал-Б"): final_raw})
+final_data = bot_zero.sent_predictions[pid_final]
+final_results = final_data.get("set_results") or []
+check("волейбол: 3:1 без очков партий проверяется",
+      final_data.get("result_checked") and final_results and
+      final_results[0].get("score") == "3:1" and
+      final_results[0].get("success") is True, final_data)
+
 # --------------------------------------------------------------- метки сети
 rows = nn_core.labels_for_match("volleyball", "0:4", 179.5, 8.5)
 check("сеть: тотал 0:4 не размечается",
@@ -172,7 +239,7 @@ def pending(team1, team2, last_score="", line=179.5, handicap=8.5):
     return {
         "sport": "volleyball",
         "teams": [team1, team2],
-        "created": "2026-11-05T10:00:00",
+        "created": datetime.now().isoformat(),
         "last_score": last_score,
         "x": [0.0] * nn_core.feature_size("volleyball"),
         "line": line,
