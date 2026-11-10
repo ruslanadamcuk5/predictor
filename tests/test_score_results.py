@@ -160,16 +160,22 @@ check("волейбол: 0:0 не закрывает прогноз",
       not (zero_data.get("set_results") or []), zero_data)
 
 # Уже сохранённый ложный результат «0:0» отменяется при следующей проверке.
+separator = "─" * 40
+base_message = ("🔴 <b>LIVE: Ноль-А vs Ноль-Б</b>\n"
+                "⏰ Начало: 2026-11-10 19:30\n" + separator)
 zero_data["result_checked"] = True
 zero_data["set_results"] = [{"target": "match", "kind": "winner",
                              "score": "0:0", "total": None,
-                             "success": False, "verdict": "П2"}]
+                             "success": False, "verdict": "П2",
+                             "label": "Матч (П1 / П2)"}]
+zero_data["original_message"] =     pred_zero.result_checker.format_result_message(
+        base_message, zero_data["set_results"], "0:0")
 pred_zero.result_checker._repair_zero_match_results()
 check("волейбол: сохранённый ложный 0:0 удалён",
       not zero_data.get("result_checked") and
       not (zero_data.get("set_results") or []), zero_data)
-check("волейбол: сообщение снова без блока результата",
-      "РЕЗУЛЬТАТЫ" not in (zero_data.get("original_message") or ""),
+check("волейбол: сообщение восстановлено без блока результата",
+      zero_data.get("original_message") == base_message,
       zero_data.get("original_message"))
 
 # Итог «3:1» без очков партий — победитель известен, прогноз проверяется.

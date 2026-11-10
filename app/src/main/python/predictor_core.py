@@ -1628,7 +1628,15 @@ class ResultChecker:
             pred_data.pop("result", None)
             pred_data.pop("checked_at", None)
             remaining = pred_data.get("set_results") or []
-            text = self.build_original_message(pred_data)
+            # Восстанавливаем именно то сообщение, которое было до проверки:
+            # в нём время начала матча, а не время отправки прогноза.
+            separator = "─" * 40
+            marker = "📊 <b>РЕЗУЛЬТАТЫ</b>"
+            stored = str(pred_data.get("original_message") or "")
+            if marker in stored:
+                text = stored.split(marker)[0].strip() + "\n" + separator
+            else:
+                text = self.build_original_message(pred_data)
             if remaining:
                 text = self.format_result_message(
                     text, remaining, pred_data.get("last_score") or "")

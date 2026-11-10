@@ -112,7 +112,7 @@ Live-линия всех видов: команды, счёт, коэффици�
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
 | Размер APK | 38 953 862 байт (37,1 МБ) |
-| SHA-256 | `9ea9dfa8a5dab371a24e4aeb0ca4d69049d38bc6a59d842a824b1a5ced7ab593` |
+| SHA-256 | `6f1f0c25d2547264cfbe7aea8d3cb78c9acba687c5a186b046e9186666e98f94` |
 
 Состояние на 10.11.2026: офлайн-регрессии (24 набора), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
