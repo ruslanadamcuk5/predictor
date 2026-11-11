@@ -850,7 +850,7 @@ check("победитель считается одним решением",
       decision_metrics["market_samples"]["winner"] == 3 and
       decision_metrics["winner_accuracy"] == 1.0, decision_metrics)
 
-# ------------------------------------------- отдельные модели рынков 1.29
+# ------------------------------------------- отдельные модели рынков 1.29–1.30
 def specialist_case(count, signal, start=0):
     """Строки только с рынком тотала: сигнал либо есть, либо шума."""
     rows, vectors = [], []
@@ -896,6 +896,24 @@ check("отдельная модель рынка молчит без перев
       noise_specialist is not None and
       noise_specialist["meta"]["ready"] is False,
       noise_specialist and noise_specialist["meta"])
+# Шумовой рынок не должен обучаться в минус: вместо слабой линейной
+# модели хранится константа «самый частый исход».
+check("рынок без сигнала откатывается к базе",
+      noise_specialist["source"] == "baseline" and
+      noise_specialist["meta"]["lift"] >= 0.0 and
+      not (noise_specialist["head_state"].get("indices") or []),
+      noise_specialist["meta"])
+# Проверка идёт по нескольким расширяющимся окнам, а не по одному разрезу.
+check("специалист проверяется на нескольких окнах",
+      specialist["meta"]["folds"] == 3 and
+      specialist["meta"]["val_samples"] == 75 and
+      specialist["meta"]["positive_folds"] == 3,
+      specialist["meta"])
+check("сильный рынок не откатывается к базе",
+      specialist["source"] == "linear" and
+      specialist["meta"]["worst_fold_lift"] > 0.0 and
+      specialist["meta"]["last_fold_lift"] > 0.0,
+      specialist["meta"])
 
 specialist_meta = {
     "head_train_samples": {"p1": 40, "p2": 40, "draw": 40,
@@ -921,10 +939,23 @@ check("диагностика объясняет каждый рынок",
       all(item["reason"] for item in report), report)
 check("диагностика показывает источник и перевес",
       by_kind["total"]["source"] == "specialist" and
+      by_kind["total"]["mode"] == "linear" and
       by_kind["total"]["ready"] is True and
+      by_kind["total"]["folds"] == 3 and
       by_kind["handicap"]["source"] == "head" and
       "мало размеченных матчей" in by_kind["handicap"]["reason"],
       by_kind)
+# Диагностика объясняет и откат к базе, а не только «ниже базы».
+quiet_meta = dict(specialist_meta)
+quiet_meta["market_models"] = {"total": noise_specialist["meta"]}
+quiet = {item["kind"]: item
+         for item in nn_core.market_report(quiet_meta, "football")}
+check("диагностика объясняет откат рынка к базе",
+      quiet["total"]["mode"] == "baseline" and
+      quiet["total"]["ready"] is False and
+      quiet["total"]["lift"] >= 0.0 and
+      "сигнала нет" in quiet["total"]["reason"],
+      quiet["total"])
 
 # Специалист не должен менять вероятности победителя.
 probe = [0.0] * nn_core.feature_size("football")

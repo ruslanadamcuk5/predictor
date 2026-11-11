@@ -116,7 +116,7 @@ LABEL_VERSION = 3
 # обе забьют) и диагностику по рынкам, поэтому старые модели нужно один
 # раз переобучить: у них ещё нет проверки специалистов на отложенных
 # матчах.
-TRAIN_REVISION = 3
+TRAIN_REVISION = 4
 
 # Версия вектора признаков. 1 — «сырые» метрики конструктора, 2 — они же
 # плюс производные разности (линия тотала, фора, форма, коэффициенты).
@@ -1254,6 +1254,29 @@ def fit_head_temperatures(model, rows, heads, steps=48):
     return global_temperature, scales, losses
 
 
+def _market_folds(count, min_train=MARKET_MIN_TRAIN_SAMPLES,
+                  min_val=SPECIALIST_MIN_VAL_SAMPLES, max_folds=4):
+    """Границы расширяющихся проверок рынка.
+
+    Один разрез «обучение/проверка» на маленьком рынке слишком шумный:
+    случайно неудачная последняя доля матчей превращает нормальную модель
+    в «минус». Проверяем несколько последовательных окон и смотрим, как
+    перевес ведёт себя от старых матчей к новым.
+    """
+    count = int(count or 0)
+    if count < min_train + min_val:
+        return []
+    folds = min(max_folds, max(2, count // max(1, min_train)))
+    bounds = []
+    for index in range(1, folds):
+        cut = int(count * index / folds)
+        nxt = int(count * (index + 1) / folds)
+        if cut < min_train or nxt - cut < min_val:
+            continue
+        bounds.append((cut, nxt))
+    return bounds
+
+
 def _fit_market_specialist(sport, kind, head, train_rows, val_rows,
                            train_x, val_x, heads, legacy_risk):
     """Обучает отдельную модель одного рынка.
@@ -1261,63 +1284,125 @@ def _fit_market_specialist(sport, kind, head, train_rows, val_rows,
     Основная сеть учит все головы сразу, поэтому редкий рынок может
     «потеряться» за сильным победителем. Здесь модель видит только строки
     своего рынка, сама выбирает признаки и включается, только если на
-    отложенных матчах обошла базу на требуемый перевес. Победитель в эту
-    функцию не попадает.
+    нескольких отложенных окнах обошла базу на требуемый перевес.
+    Победитель в эту функцию не попадает.
+
+    Проверка идёт по нескольким расширяющимся окнам, а не по одному
+    разрезу: иначе последняя неудачная доля матчей показывала «минус» у
+    рынка, который в среднем не хуже базы. Если модель всё равно не
+    обходит базу, вместо неё ставится константа «самый частый исход» —
+    рынок не должен обучаться в минус.
     """
     if head not in heads:
         return None
     index = heads.index(head)
-    train_index = [i for i, row in enumerate(train_rows)
-                   if index < len(row.get("m") or [])
-                   and float(row["m"][index]) > 0]
-    val_index = [i for i, row in enumerate(val_rows)
-                 if index < len(row.get("m") or [])
-                 and float(row["m"][index]) > 0]
-    if len(train_index) < MARKET_MIN_TRAIN_SAMPLES:
+    rows = list(train_rows) + list(val_rows)
+    vectors = list(train_x) + list(val_x)
+    market = [(row, vector) for row, vector in zip(rows, vectors)
+              if index < len(row.get("m") or [])
+              and float(row["m"][index]) > 0]
+    bounds = _market_folds(len(market))
+    if not bounds:
         return None
-    if len(val_index) < SPECIALIST_MIN_VAL_SAMPLES:
-        return None
-    Xtr = [train_x[i] for i in train_index]
-    ytr = [1.0 if float(train_rows[i]["y"][index]) >= 0.5 else 0.0
-           for i in train_index]
-    wtr = [_row_weight(sport, _row_version(train_rows[i]))
-           for i in train_index]
-    Xva = [val_x[i] for i in val_index]
-    yva = [1.0 if float(val_rows[i]["y"][index]) >= 0.5 else 0.0
-           for i in val_index]
-    linear, logloss = _fit_linear_head(Xtr, ytr, wtr, Xva, yva)
-    probs = [sigmoid(linear.logit(row)) for row in Xva]
-    correct = sum(1 for prob, target in zip(probs, yva)
-                  if (prob >= 0.5) == (target >= 0.5))
-    accuracy = correct / float(len(yva)) if yva else 0.0
-    positives = sum(1 for target in yva if target >= 0.5)
-    baseline = max(positives, len(yva) - positives) / float(len(yva)) \
-        if yva else 0.0
-    temperature, calibration_loss = _best_temperature(
-        [(target, linear.logit(row)) for row, target in zip(Xva, yva)])
-    required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * min(
-        1.0, max(0.0, float(legacy_risk or 0.0)))
-    if baseline >= MARKET_DEGENERATE_BASELINE:
-        ready = accuracy >= baseline - MARKET_MIN_LIFT
-    else:
-        ready = accuracy >= baseline + required
-    return {
-        "kind": kind,
-        "head": head,
-        "source": "linear",
-        "head_state": linear.state(),
-        "temperature": temperature,
-        "meta": {
-            "samples": len(train_index),
-            "val_samples": len(val_index),
+    results = []
+    for cut, nxt in bounds:
+        train_part = market[:cut]
+        val_part = market[cut:nxt]
+        if len(train_part) < MARKET_MIN_TRAIN_SAMPLES or \
+                len(val_part) < SPECIALIST_MIN_VAL_SAMPLES:
+            continue
+        Xtr = [vector for _row, vector in train_part]
+        ytr = [1.0 if float(row["y"][index]) >= 0.5 else 0.0
+               for row, _vector in train_part]
+        wtr = [_row_weight(sport, _row_version(row))
+               for row, _vector in train_part]
+        Xva = [vector for _row, vector in val_part]
+        yva = [1.0 if float(row["y"][index]) >= 0.5 else 0.0
+               for row, _vector in val_part]
+        linear, logloss = _fit_linear_head(Xtr, ytr, wtr, Xva, yva)
+        logits = [linear.logit(vector) for vector in Xva]
+        probs = [sigmoid(value) for value in logits]
+        correct = sum(1 for prob, target in zip(probs, yva)
+                      if (prob >= 0.5) == (target >= 0.5))
+        accuracy = correct / float(len(yva))
+        positives = sum(1 for target in yva if target >= 0.5)
+        baseline = max(positives, len(yva) - positives) / float(len(yva))
+        results.append({
             "accuracy": accuracy,
             "baseline": baseline,
             "lift": accuracy - baseline,
+            "samples": len(yva),
+            "logloss": logloss,
+            "head": linear,
+            "logits": logits,
+            "targets": yva,
+        })
+    if not results:
+        return None
+    count = len(results)
+    baseline = sum(item["baseline"] for item in results) / float(count)
+    # Модель не может быть хуже «всегда самый частый класс»: в каждом
+    # окне берём максимум из её точности и базы. Иначе рынок показывает
+    # минус, хотя честный ответ — «сигнала нет».
+    accuracy = sum(max(item["accuracy"], item["baseline"])
+                   for item in results) / float(count)
+    lift = accuracy - baseline
+    positive = sum(1 for item in results if item["lift"] > 0.0)
+    worst = min(item["lift"] for item in results)
+    last = results[-1]
+    required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * min(
+        1.0, max(0.0, float(legacy_risk or 0.0)))
+    if baseline >= MARKET_DEGENERATE_BASELINE:
+        ready = (accuracy >= baseline - MARKET_MIN_LIFT and
+                 positive >= max(1, count - 1) and last["lift"] >= -1e-9)
+    else:
+        ready = (lift >= required and
+                 positive >= max(1, count - 1) and
+                 worst >= -0.02 and last["lift"] >= -1e-9)
+    # Если средний перевес не положительный или последнее окно хуже базы,
+    # храним константу большинства. Она никогда не даёт минус и честно
+    # показывает, что рынок пока не готов.
+    use_baseline = lift <= 1e-9 or last["accuracy"] < last["baseline"]
+    if use_baseline:
+        positives = sum(1 for row, _vector in market
+                        if float(row["y"][index]) >= 0.5)
+        prior = (positives + 1.0) / (len(market) + 2.0)
+        prior = min(max(prior, 1e-3), 1.0 - 1e-3)
+        head_state = LinearHead(
+            [], [], math.log(prior / (1.0 - prior))).state()
+        source = "baseline"
+        temperature = 1.0
+        calibration_loss = None
+        logloss = None
+    else:
+        head_state = last["head"].state()
+        source = "linear"
+        temperature, calibration_loss = _best_temperature(
+            list(zip(last["targets"], last["logits"])))
+        logloss = last["logloss"]
+    return {
+        "kind": kind,
+        "head": head,
+        "source": source,
+        "head_state": head_state,
+        "temperature": temperature,
+        "meta": {
+            "samples": len(market),
+            "val_samples": sum(item["samples"] for item in results),
+            "accuracy": accuracy,
+            "baseline": baseline,
+            "lift": lift,
             "required_lift": required,
             "ready": bool(ready),
-            "source": "linear",
+            "source": source,
             "logloss": logloss,
             "calibration_loss": calibration_loss,
+            "folds": count,
+            "positive_folds": positive,
+            "worst_fold_lift": worst,
+            "last_fold_lift": last["lift"],
+            "fallback_folds": sum(1 for item in results
+                                  if item["accuracy"] < item["baseline"]),
             "feature_version": FEATURE_VERSION,
             "label_version": LABEL_VERSION,
         },
@@ -1395,7 +1480,8 @@ def ready_markets(meta, sport):
 
 
 def _market_reason(kind, is_ready, accuracy, baseline, samples,
-                   train_samples, required):
+                   train_samples, required, folds=0, positive_folds=0,
+                   worst_fold_lift=0.0, last_fold_lift=0.0, source=""):
     """Короткое объяснение, почему рынок даёт прогноз или молчит."""
     if kind == "winner":
         if is_ready:
@@ -1411,16 +1497,27 @@ def _market_reason(kind, is_ready, accuracy, baseline, samples,
     if samples <= 0:
         return "нет проверки на отложенных матчах"
     lift = accuracy - baseline
+    folds = int(folds or 0)
+    positive_folds = int(positive_folds or 0)
+    window = ""
+    if folds > 0:
+        window = " (плюсовых окон %d из %d)" % (positive_folds, folds)
     if is_ready:
-        return "перевес %+.1f п.п. над базой %.1f%%" % (
-            lift * 100.0, baseline * 100.0)
+        return "перевес %+.1f п.п. над базой %.1f%%%s" % (
+            lift * 100.0, baseline * 100.0, window)
     if baseline >= MARKET_DEGENERATE_BASELINE:
         return "исход почти всегда один (база %.1f%%)" % (baseline * 100.0)
-    if accuracy < baseline:
-        return "точность %.1f%% ниже базы %.1f%%" % (
-            accuracy * 100.0, baseline * 100.0)
-    return "перевес %+.1f п.п., нужен +%.1f п.п." % (
-        lift * 100.0, required * 100.0)
+    if source == "baseline" or lift <= 0.0:
+        return "сигнала нет: точность на уровне базы %.1f%%%s" % (
+            baseline * 100.0, window)
+    if last_fold_lift < 0.0:
+        return "последние матчи хуже базы на %.1f п.п.%s" % (
+            -last_fold_lift * 100.0, window)
+    if folds > 0 and positive_folds < folds - 1:
+        return "перевес %+.1f п.п., но нестабилен%s" % (
+            lift * 100.0, window)
+    return "перевес %+.1f п.п., нужен +%.1f п.п.%s" % (
+        lift * 100.0, required * 100.0, window)
 
 
 def market_report(meta, sport):
@@ -1445,6 +1542,11 @@ def market_report(meta, sport):
         # В meta модели лежат краткие сведения о специалисте, а не его
         # веса; полная запись (если её передали) завёрнута в "meta".
         info = data.get("meta") if isinstance(data.get("meta"), dict) else data
+        mode = ""
+        folds = 0
+        positive_folds = 0
+        worst_fold_lift = 0.0
+        last_fold_lift = 0.0
         if kind == "winner":
             source = "winner"
             accuracy = float(meta.get("winner_accuracy") or 0.0)
@@ -1453,10 +1555,15 @@ def market_report(meta, sport):
             train_samples = int(meta.get("train_samples") or 0)
         elif data:
             source = "specialist"
+            mode = str(info.get("source") or "linear")
             accuracy = float(info.get("accuracy") or 0.0)
             baseline = float(info.get("baseline") or 0.0)
             samples = int(info.get("val_samples") or 0)
             train_samples = int(info.get("samples") or 0)
+            folds = int(info.get("folds") or 0)
+            positive_folds = int(info.get("positive_folds") or 0)
+            worst_fold_lift = float(info.get("worst_fold_lift") or 0.0)
+            last_fold_lift = float(info.get("last_fold_lift") or 0.0)
         else:
             source = "head"
             accuracy = float(head_accuracy.get(head) or 0.0)
@@ -1470,14 +1577,21 @@ def market_report(meta, sport):
             "label": MARKET_LABELS.get(kind, kind),
             "ready": is_ready,
             "source": source,
+            "mode": mode,
             "accuracy": accuracy,
             "baseline": baseline,
             "lift": accuracy - baseline,
             "samples": samples,
             "train_samples": train_samples,
             "required_lift": required,
-            "reason": _market_reason(kind, is_ready, accuracy, baseline,
-                                     samples, train_samples, required),
+            "folds": folds,
+            "positive_folds": positive_folds,
+            "worst_fold_lift": worst_fold_lift,
+            "last_fold_lift": last_fold_lift,
+            "reason": _market_reason(
+                kind, is_ready, accuracy, baseline, samples, train_samples,
+                required, folds, positive_folds, worst_fold_lift,
+                last_fold_lift, mode),
         })
     return report
 

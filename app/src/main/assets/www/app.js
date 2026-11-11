@@ -507,19 +507,28 @@ function nnMarketReport(item) {
   const report = Array.isArray(item.market_report) ? item.market_report : [];
   if (!report.length) return '';
   const readyCount = report.filter(row => row.ready).length;
-  const sourceLabel = row => row.source === 'specialist'
-    ? ' · отдельная модель'
-    : (row.source === 'winner' ? '' : ' · голова сети');
+  const sourceLabel = row => {
+    if (row.source === 'winner') return '';
+    if (row.source === 'specialist') {
+      return row.mode === 'baseline'
+        ? ' · отдельная модель: база'
+        : ' · отдельная модель';
+    }
+    return ' · голова сети';
+  };
   const lines = report.map(row => {
     const accuracy = Math.round((row.accuracy || 0) * 100);
     const baseline = Math.round((row.baseline || 0) * 100);
     const lift = (row.lift || 0) * 100;
     const val = num(row.samples);
+    const folds = num(row.folds);
+    const positive = num(row.positive_folds);
+    const windows = folds ? ` · окна ${positive}/${folds}` : '';
     return `<div class="nn-market-line${row.ready ? ' ok' : ''}">
       <span class="nn-market-line-name">${esc(row.label || row.kind || '')}</span>
       <span class="nn-market-line-num">${accuracy}% / база ${baseline}%</span>
       <span class="nn-market-line-lift">${lift >= 0 ? '+' : ''}${lift.toFixed(1)} п.п.</span>
-      <span class="nn-market-line-reason">${esc(row.reason || '')}${sourceLabel(row)}${val ? ` · проверка ${val}` : ''}</span>
+      <span class="nn-market-line-reason">${esc(row.reason || '')}${sourceLabel(row)}${val ? ` · проверок ${val}` : ''}${windows}</span>
     </div>`;
   }).join('');
   return `<details class="nn-market-report">
