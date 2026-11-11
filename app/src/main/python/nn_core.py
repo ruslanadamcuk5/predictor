@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 
@@ -116,7 +117,7 @@ LABEL_VERSION = 3
 # обе забьют) и диагностику по рынкам, поэтому старые модели нужно один
 # раз переобучить: у них ещё нет проверки специалистов на отложенных
 # матчах.
-TRAIN_REVISION = 4
+TRAIN_REVISION = 5
 
 # Версия вектора признаков. 1 — «сырые» метрики конструктора, 2 — они же
 # плюс производные разности (линия тотала, фора, форма, коэффициенты).
@@ -147,6 +148,9 @@ TEMPERATURE_RANGE = (0.35, 5.0)
 # базовый уровень близок к 100%, и требовать перевеса бессмысленно:
 # достаточно не ошибаться на этом классе.
 MARKET_DEGENERATE_BASELINE = 0.9
+# Допустимое проседание победителя при переобучении. В пределах половины
+# процентного пункта разница на десятках матчей — шум; больше — уже откат.
+WINNER_GUARD_EPS = 0.005
 
 # Рынки, для которых можно обучать отдельную модель. Победитель сюда не
 # входит: его голова — основа текущей сети, и её нельзя менять незаметно.
@@ -1792,13 +1796,22 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
                     for row in val_rows]
     val_rows_for_model = [dict(row, x=x)
                           for row, x in zip(val_rows, val_expanded)]
-    standardizer = Standardizer().fit(train_expanded)
     input_size = len(train_expanded[0])
     output_size = len(heads)
     sizes = [input_size] + hidden_layers + [output_size]
 
     reuse = bool(previous and previous.get("sizes") == sizes and
                  (previous.get("activation") or "tanh") == activation)
+    # При дообучении сохраняем прежнюю стандартизацию: веса сети уже
+    # настроены под неё. Иначе тот же вектор признаков масштабируется
+    # иначе и «продолжение» обучения начинает с чужого состояния.
+    if reuse:
+        stored = previous.get("standardizer") or {}
+        standardizer = Standardizer(stored.get("mean"), stored.get("std"))
+        if not standardizer.mean:
+            standardizer = Standardizer().fit(train_expanded)
+    else:
+        standardizer = Standardizer().fit(train_expanded)
     model = MLP.load(previous) if reuse else MLP(
         sizes, seed=seed, activation=activation)
 
@@ -1924,6 +1937,41 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
     state["temperature"] = temperature
     state["head_temperature"] = head_temperature
     metrics = evaluate_hybrid(state, val_rows, heads)
+    # Ревизия обучения не должна откатывать победителя. Полный цикл на
+    # новых данных иногда уводит сеть в сторону, хотя прежние веса на тех
+    # же отложенных матчах точнее. Тогда оставляем прежние веса, а новые
+    # специалисты рынков дообучаем поверх них: победитель не портится,
+    # рынки тотала/форы/обе забьют всё равно получают свежую проверку.
+    kept_previous = False
+    if previous and reuse:
+        old_metrics = evaluate_hybrid(previous, val_rows, heads)
+        old_winner = float(old_metrics.get("winner_accuracy") or 0.0)
+        new_winner = float(metrics.get("winner_accuracy") or 0.0)
+        if old_winner > 0.0 and new_winner < old_winner - WINNER_GUARD_EPS:
+            state = copy.deepcopy(previous)
+            state["market_models"] = {}
+            metrics = evaluate_hybrid(state, val_rows, heads)
+            kept_previous = True
+            # Мета должна описывать именно те веса и калибровку, которые
+            # остались в модели, а не отклонённый новый прогон.
+            head_linear = dict(state.get("head_linear") or {})
+            head_source = dict(state.get("head_source") or {})
+            head_auc = dict(state.get("head_auc") or {})
+            head_logloss = dict(state.get("head_logloss") or {})
+            try:
+                temperature = float(state.get("temperature") or 1.0)
+            except (TypeError, ValueError):
+                temperature = 1.0
+            head_temperature = dict(state.get("head_temperature") or {})
+            old_meta = previous.get("meta") or {}
+            epochs = int(old_meta.get("epochs") or epochs)
+            best_epoch = int(old_meta.get("best_epoch") or
+                             best_epoch or epochs)
+            try:
+                loss = float(old_meta.get("loss") or loss)
+            except (TypeError, ValueError):
+                pass
+            calibration_loss = old_meta.get("calibration_loss")
     base_meta = {
         "head_train_samples": head_train_samples,
         "head_accuracy": metrics.get("head_accuracy") or {},

@@ -895,6 +895,31 @@ class NeuralTrainer:
                     self._log("Нейросеть: %s — нет отчёта по головам, "
                               "переобучаем модель" %
                               sports.short_name(sport))
+                # Если текущая модель после неудачного переобучения хуже
+                # резервной копии по победителю, начинаем не от неё, а от
+                # копии. Иначе принудительное переобучение закрепляет
+                # просадку: сравнивать новую модель не с чем, кроме уже
+                # испорченной.
+                base_model = previous
+                if needs_recoverage and previous:
+                    backup = self._backups.get(sport)
+                    if backup:
+                        current_check = nn_core.evaluate_previous(
+                            sport, previous, rows,
+                            share=cfg["validation_share"])
+                        backup_check = nn_core.evaluate_previous(
+                            sport, backup, rows,
+                            share=cfg["validation_share"])
+                        if backup_check and (
+                                not current_check or
+                                float(backup_check.get("winner_accuracy")
+                                      or 0.0) >
+                                float(current_check.get("winner_accuracy")
+                                      or 0.0) + IMPROVE_EPS):
+                            base_model = backup
+                            self._log("Нейросеть: %s — резервная копия "
+                                      "точнее по победителю, обучаем от неё"
+                                      % sports.short_name(sport))
                 if previous and not force and not needs_recoverage:
                     trained_on = int(meta.get("samples") or 0)
                     new_rows = max(0, len(rows) - trained_on)
@@ -915,9 +940,9 @@ class NeuralTrainer:
                                   (sports.short_name(sport), new_rows))
                 try:
                     model, report = nn_core.train_model(
-                        sport, rows, previous=previous,
+                        sport, rows, previous=base_model,
                         epochs=cfg["epochs"]
-                        if (previous is None or needs_recoverage)
+                        if (base_model is None or needs_recoverage)
                         else cfg["finetune_epochs"],
                         lr=cfg["learning_rate"],
                         l2=cfg["l2"],

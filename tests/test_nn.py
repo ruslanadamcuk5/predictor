@@ -992,4 +992,53 @@ check("без прежней оценки победителя решает об
           {"winner_accuracy": 0.60, "accuracy": 0.40},
           {"winner_accuracy": 0.0, "accuracy": 0.50}, True) is False)
 
+# Переобучение по новой ревизии не должно откатывать победителя:
+# если новые метки в обучении противоречат отложенным матчам, остаются
+# прежние веса, а не принимается просевшая модель.
+guard_sport = "basketball"
+guard_size = nn_core.feature_size(guard_sport)
+guard_heads = nn_core.feature_spec(guard_sport)[1]
+
+
+def guard_rows(flip_train):
+    rows = []
+    for index in range(100):
+        x = [0.0] * guard_size
+        is_val = index >= 80
+        x[0] = -1.0 if index % 2 == 0 else 1.0
+        p1 = 1.0 if x[0] < 0 else 0.0
+        if flip_train and not is_val:
+            p1 = 1.0 - p1
+        y = [0.0] * len(guard_heads)
+        m = [0.0] * len(guard_heads)
+        y[0] = p1
+        y[1] = 1.0 - p1
+        m[0] = 1.0
+        m[1] = 1.0
+        rows.append({"x": x, "y": y, "m": m,
+                     "t": "2026-10-%02d %02d" % (index // 24 + 1, index % 24),
+                     "g": "guard-%d" % index, "v": 3})
+    return rows
+
+
+guard_prev, _report = nn_core.train_model(
+    guard_sport, guard_rows(False), epochs=40, hidden_layers=[8],
+    seed=5, lr=0.05)
+guard_new, _report = nn_core.train_model(
+    guard_sport, guard_rows(True), previous=guard_prev, epochs=100,
+    hidden_layers=[8], seed=5, lr=0.1)
+check("переобучение не откатывает победителя",
+      float(guard_new["meta"]["winner_accuracy"] or 0.0) >=
+      float(guard_prev["meta"]["winner_accuracy"] or 0.0) -
+      nn_core.WINNER_GUARD_EPS,
+      (guard_prev["meta"].get("winner_accuracy"),
+       guard_new["meta"].get("winner_accuracy")))
+guard_probe = guard_rows(True)[-1]["x"]
+guard_old_probs = nn_core.predict_probs(guard_prev, guard_probe)
+guard_new_probs = nn_core.predict_probs(guard_new, guard_probe)
+check("при откате остаются прежние веса победителя",
+      all(abs(guard_old_probs[head] - guard_new_probs[head]) < 1e-12
+          for head in ("p1", "p2")),
+      (guard_old_probs, guard_new_probs))
+
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

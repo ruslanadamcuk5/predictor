@@ -23,7 +23,7 @@ from datetime import datetime
 from email.utils import formatdate
 from urllib.parse import parse_qs, unquote
 
-SERVER_VERSION = "1.30.0"
+SERVER_VERSION = "1.31.0"
 MAX_BODY = 12 * 1024 * 1024
 # Выгрузка нейросети содержит всю выборку, очередь и архив — она заметно
 # больше обычного запроса анализа, поэтому для неё отдельный предел.
