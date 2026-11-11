@@ -922,13 +922,15 @@ class NeuralTrainer:
                     share=cfg["validation_share"])
                 old_accuracy = float(old_metrics.get("accuracy")) \
                     if old_metrics else None
-                # Модель без покрытия по головам не может открыть рынки:
-                # её нужно переобучить, даже если общая точность чуть
-                # просела. Иначе старые модели навсегда остаются «готовыми»
-                # без проверки перевеса по каждому рынку.
+                # Модель без покрытия по головам или обученная по старой
+                # ревизии не может открыть рынки: её нужно переобучить,
+                # даже если общая точность чуть просела. Иначе старые
+                # модели навсегда остаются «готовыми» без проверки
+                # перевеса по каждому рынку.
                 old_meta = (previous or {}).get("meta") or {}
-                needs_recoverage = bool(previous) and not isinstance(
-                    old_meta.get("head_train_samples"), dict)
+                needs_recoverage = bool(previous) and (
+                    not isinstance(old_meta.get("head_train_samples"), dict) or
+                    _revision(old_meta) < nn_core.TRAIN_REVISION)
                 history = self._history(previous)
                 entry = {
                     "at": new_meta["updated_at"],
@@ -1026,8 +1028,13 @@ class NeuralTrainer:
 
         Мало примеров или точность не выше «всегда самый частый класс» —
         рынок молчит. Иначе случайный сигнал выглядит как уверенный.
+        Победитель проверяется как одно совместное решение П1/Ничья/П2:
+        отдельная голова П2 при несбалансированных исходах почти всегда
+        уступает «всегда не П2» и не должна закрывать весь рынок.
         """
         meta = (model or {}).get("meta") or {}
+        if kind == "winner":
+            return nn_core.winner_ready(meta)
         heads = cls._market_heads(sport, kind)
         return bool(heads) and all(nn_core.head_ready(meta, head)
                                    for head in heads)
@@ -1106,15 +1113,20 @@ class NeuralTrainer:
 
         # ---- командные виды: победитель ----
         if ready.get("winner"):
-            candidates = [("П1", probs.get("p1", 0.0))]
-            if has_draw:
-                candidates.append(("Ничья", probs.get("draw", 0.0)))
-            candidates.append(("П2", probs.get("p2", 0.0)))
-            side, value = max(candidates, key=lambda item: item[1])
-            if value >= min_conf:
-                predictions.append(make(
-                    "match", "Матч (П1 / Ничья / П2)" if has_draw else "Матч (П1 / П2)",
-                    "winner", side, side, value))
+            candidates = []
+            if "p1" in probs:
+                candidates.append(("П1", probs["p1"]))
+            if has_draw and "draw" in probs:
+                candidates.append(("Ничья", probs["draw"]))
+            if "p2" in probs:
+                candidates.append(("П2", probs["p2"]))
+            if candidates:
+                side, value = max(candidates, key=lambda item: item[1])
+                if value >= min_conf:
+                    predictions.append(make(
+                        "match",
+                        "Матч (П1 / Ничья / П2)" if has_draw else "Матч (П1 / П2)",
+                        "winner", side, side, value))
         # ---- командные виды: тотал ----
         if ready.get("total"):
             over = probs.get("over")
@@ -1231,6 +1243,8 @@ class NeuralTrainer:
             payload = {
                 "generated_at": _now(),
                 "label_version": nn_core.LABEL_VERSION,
+                "feature_version": nn_core.FEATURE_VERSION,
+                "training_revision": nn_core.TRAIN_REVISION,
                 "market_min_samples": nn_core.MARKET_MIN_TRAIN_SAMPLES,
                 "samples": {sport: list(rows)
                             for sport, rows in self._samples.items()},
@@ -1306,11 +1320,17 @@ class NeuralTrainer:
                     hint = ("Плато: точность не растёт. Ждём ещё %d новых "
                             "примеров, затем попробуем снова." % plateau_wait)
                 else:
-                    hint = ("Модель обучена на %d примерах, точность %.0f%% "
-                            "при базовой %.0f%%." % (
+                    ready_names = [nn_core.MARKET_LABELS.get(kind, kind)
+                                   for kind in (meta.get("ready_markets") or [])]
+                    lift = float(meta.get("lift") or 0.0) * 100.0
+                    hint = ("Модель обучена на %d примерах: точность %.0f%% "
+                            "при базовой %.0f%% (%+.1f п.п.). Готовые рынки: %s." % (
                                 int(meta.get("samples") or 0),
                                 float(meta.get("accuracy") or 0.0) * 100.0,
-                                float(meta.get("baseline") or 0.0) * 100.0))
+                                float(meta.get("baseline") or 0.0) * 100.0,
+                                lift,
+                                ", ".join(ready_names) if ready_names
+                                else "пока нет — нужен больший перевес"))
             elif not cfg["auto_train"]:
                 hint = ("Авто-обучение выключено. Нажмите «Обучить сейчас», "
                         "когда наберётся %d примеров (сейчас %d)." % (
@@ -1339,7 +1359,14 @@ class NeuralTrainer:
                 "accuracy": float(meta.get("accuracy") or 0.0),
                 "baseline": float(meta.get("baseline") or 0.0),
                 "lift": float(meta.get("lift") or 0.0),
+                "accuracy_all": float(meta.get("accuracy_all") or 0.0),
+                "baseline_all": float(meta.get("baseline_all") or 0.0),
+                "ready_markets": list(meta.get("ready_markets") or []),
                 "winner_accuracy": float(meta.get("winner_accuracy") or 0.0),
+                "winner_baseline": float(meta.get("winner_baseline") or 0.0),
+                "winner_samples": int(meta.get("winner_samples") or 0),
+                "feature_version": int(meta.get("feature_version") or 0),
+                "head_source": dict(meta.get("head_source") or {}),
                 "val_samples": int(meta.get("val_samples") or 0),
                 "best_epoch": int(meta.get("best_epoch") or 0),
                 "epochs": int(meta.get("epochs") or 0),

@@ -757,4 +757,93 @@ check("время изменения счёта записано",
       bool(idle_home._pending[0].get("score_at")),
       idle_home._pending[0])
 
+# ------------------------------------------------- производные признаки 1.28
+check("версия признаков 2", nn_core.FEATURE_VERSION == 2,
+      nn_core.FEATURE_VERSION)
+raw = [0.0] * nn_core.feature_size("football")
+expanded = nn_core.expand_features("football", raw)
+check("производные признаки добавлены",
+      len(expanded) == len(raw) + nn_core.DERIVED_FEATURES,
+      (len(raw), len(expanded)))
+check("производные признаки детерминированы",
+      nn_core.expand_features("football", raw) == expanded)
+check("старая модель читает сырые признаки",
+      nn_core.model_features({"feature_version": 1}, raw) == raw)
+check("новая модель читает производные признаки",
+      nn_core.model_features({"feature_version": 2, "sport": "football"},
+                             raw) == expanded)
+tt_raw = [0.0] * nn_core.feature_size("table_tennis")
+check("настольный теннис тоже расширяется",
+      len(nn_core.expand_features("table_tennis", tt_raw)) ==
+      len(tt_raw) + nn_core.DERIVED_FEATURES)
+
+linear = nn_core.LinearHead([0, 2], [1.5, -0.5], 0.25)
+check("линейная голова считает логит",
+      abs(linear.logit([1.0, 9.0, 2.0]) - 0.75) < 1e-9, linear.logit([1.0, 9.0, 2.0]))
+restored = nn_core.LinearHead.load(linear.state())
+check("линейная голова сохраняется и читается",
+      restored.indices == linear.indices and
+      abs(restored.logit([1.0, 9.0, 2.0]) - 0.75) < 1e-9,
+      restored.state())
+
+# Явный линейный сигнал: голова p1 должна выбрать линейную модель.
+linear_rows = []
+for index in range(80):
+    strong = index % 2 == 0
+    x = [0.0] * nn_core.feature_size("football")
+    x[0] = 1.0 if strong else -1.0
+    y = [1.0 if strong else 0.0, 0.0 if strong else 1.0, 0.0,
+         0.0, 0.0, 0.0]
+    linear_rows.append({"x": x, "y": y, "m": [1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+                        "t": "2026-10-%02d" % (index % 28 + 1),
+                        "g": "g%d" % index})
+linear_model, _report = nn_core.train_model(
+    "football", linear_rows, epochs=4, hidden_layers=[8], seed=3)
+linear_meta = linear_model.get("meta") or {}
+check("модель обучена на версии признаков 2",
+      linear_meta.get("feature_version") == 2, linear_meta)
+check("ревизия обучения 2",
+      linear_meta.get("training_revision") == nn_core.TRAIN_REVISION,
+      linear_meta)
+check("линейная голова выбрана при явном сигнале",
+      (linear_meta.get("head_source") or {}).get("p1") == "linear",
+      linear_meta.get("head_source"))
+check("точность по готовому рынку выше базы",
+      float(linear_meta.get("lift") or 0.0) > 0.1, linear_meta)
+
+# Готовность победителя — по совместному решению, а не по каждой голове.
+winner_meta = {
+    "head_train_samples": {"p1": 40, "p2": 40, "draw": 40},
+    "winner_samples": 40, "winner_accuracy": 0.60, "winner_baseline": 0.50,
+    "head_accuracy": {"p1": 0.50, "p2": 0.50, "draw": 0.70},
+    "head_baseline": {"p1": 0.55, "p2": 0.55, "draw": 0.70},
+}
+check("победитель готов по совместной точности",
+      nn_core.winner_ready(winner_meta) is True, winner_meta)
+winner_meta["winner_accuracy"] = 0.50
+check("победитель без перевеса не готов",
+      nn_core.winner_ready(winner_meta) is False, winner_meta)
+
+sample_metrics = {
+    "market_samples": {"winner": 10, "btts": 10},
+    "market_correct": {"winner": 7, "btts": 10},
+    "market_baseline": {"winner": 5, "btts": 10},
+}
+accuracy, baseline, decisions = nn_core.market_summary(
+    sample_metrics, {"winner": True, "btts": True})
+check("постоянный рынок не завышает точность",
+      decisions == 10 and abs(accuracy - 0.7) < 1e-9 and
+      abs(baseline - 0.5) < 1e-9, (accuracy, baseline, decisions))
+
+decision_samples = [
+    ({"p1": 0.7, "p2": 0.2, "draw": 0.1}, [1.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+    ({"p1": 0.2, "p2": 0.7, "draw": 0.1}, [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]),
+    ({"p1": 0.1, "p2": 0.2, "draw": 0.7}, [0.0, 0.0, 1.0], [1.0, 1.0, 1.0]),
+]
+decision_metrics = nn_core._metrics_from_probs(
+    decision_samples, ["p1", "p2", "draw"])
+check("победитель считается одним решением",
+      decision_metrics["market_samples"]["winner"] == 3 and
+      decision_metrics["winner_accuracy"] == 1.0, decision_metrics)
+
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

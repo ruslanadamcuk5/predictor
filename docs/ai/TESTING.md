@@ -274,7 +274,7 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.24.apk
 
 Ожидается:
 
-- `versionCode 28`, `versionName 1.27`;
+- `versionCode 29`, `versionName 1.28`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;
@@ -282,7 +282,7 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.24.apk
 - в ZIP есть `assets/www/app.js`, `assets/www/docs.js` и
   `assets/chaquopy/app.imy`;
 - в `app.imy` есть `sports.py` и `rule_advisor.py`, а `engine_api.py`
-  содержит строку `1.27.0` и `score_cache` (Chaquopy 17 пакует исходники,
+  содержит строку `1.28.0` и `score_cache` (Chaquopy 17 пакует исходники,
   не `.pyc`).
 
 Проверка содержимого:

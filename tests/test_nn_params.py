@@ -121,6 +121,7 @@ for index in range(80):
             m.append(0.0)
     rows.append({"x": x, "y": y, "m": m, "t": "2026-10-%02d" % (index % 28 + 1)})
 
+input_size = nn_core.feature_size("football") + nn_core.DERIVED_FEATURES
 model, report = nn_core.train_model(
     "football", rows, epochs=30, lr=0.05, hidden_layers=[16, 8],
     activation="tanh", momentum=0.9, batch_size=16, validation_share=0.25,
@@ -128,7 +129,7 @@ model, report = nn_core.train_model(
 meta = model.get("meta") or {}
 check("модель обучена с параметрами", bool(model) and report["ok"], report)
 check("архитектура попала в модель",
-      model["sizes"] == [nn_core.feature_size("football"), 16, 8,
+      model["sizes"] == [input_size, 16, 8,
                          len(nn_core.TEAM_HEADS)], model["sizes"])
 check("архитектура попала в метаданные",
       meta.get("architecture") == [16, 8], meta.get("architecture"))
@@ -154,7 +155,7 @@ check("смена архитектуры обучает заново",
       (changed.get("meta") or {}).get("finetuned") is False,
       changed.get("meta"))
 check("новая архитектура применилась",
-      changed["sizes"] == [nn_core.feature_size("football"), 8, 4,
+      changed["sizes"] == [input_size, 8, 4,
                            len(nn_core.TEAM_HEADS)], changed["sizes"])
 
 activated, _ = nn_core.train_model(

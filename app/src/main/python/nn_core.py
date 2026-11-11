@@ -112,16 +112,24 @@ MARKET_LABELS = {
 # вслепую, а сохраняем в архиве.
 LABEL_VERSION = 3
 
-# Ревизия обучения: 1.27 добавила веса старых строк и калибровку
-# температуры. Модель без этой ревизии переобучается один раз, иначе
-# старые веса продолжали бы давать вероятности без проверки.
-TRAIN_REVISION = 1
+# Ревизия обучения. 1.28 добавила производные признаки и отдельную
+# линейную модель на каждую голову, поэтому старые веса несовместимы:
+# модель без этой ревизии переобучается один раз.
+TRAIN_REVISION = 2
+
+# Версия вектора признаков. 1 — «сырые» метрики конструктора, 2 — они же
+# плюс производные разности (линия тотала, фора, форма, коэффициенты).
+# Старые модели читаются с версией 1, чтобы не сломать уже собранные
+# прогнозы; новые всегда обучаются на версии 2.
+FEATURE_VERSION = 2
 
 # Минимум обучающих примеров на голову, чтобы рынок давал прогноз.
 # Рынок без покрытия или без перевеса над «всегда самый частый класс»
 # молчит: редкие и случайные сигналы не должны выглядеть уверенными.
 MARKET_MIN_TRAIN_SAMPLES = 20
-MARKET_MIN_LIFT = 0.01
+# Минимальный перевес над «всегда самый частый класс». 1 п.п. — это шум
+# на выборке в сотни матчей; 2 п.п. уже отличимы от случайности.
+MARKET_MIN_LIFT = 0.02
 # Дополнительный перевес за каждую долю строк со старой разметкой.
 # Футбол/теннис/волейбол до 1.25 могли размечаться по счёту периода,
 # поэтому при legacy_risk ≈ 1 рынку нужно на 3 п.п. больше.
@@ -216,6 +224,107 @@ def set_slot(sport):
     if layout != "tt":
         return -1
     return len(spec) + 1
+
+
+# Производные признаки: разности «команда минус линия/фора», сравнение
+# формы и вероятностей из коэффициентов. Сырые метрики по отдельности
+# слабо связаны с исходом (средний тотал сам по себе ничего не говорит),
+# а их разность с линией рынка — говорит. Список фиксирован, поэтому
+# размер вектора не зависит от вида спорта: отсутствующие метрики дают
+# нули и просто не участвуют.
+DERIVED_FEATURES = 13
+
+
+def expand_features(sport, x):
+    """Дополняет вектор признаков производными разностями (версия 2).
+
+    Функция обязана быть чистой и детерминированной: тот же вектор
+    признаков используется и при обучении, и при прогнозе. Индексы
+    берутся из ``feature_spec`` по именам метрик, поэтому порядок
+    признаков можно менять без пересчёта сохранённых моделей.
+    """
+    sport = sports.normalize_sport(sport)
+    spec, _heads, _layout = feature_spec(sport)
+    values = list(x or [])
+    index = {}
+    for position, (name, _args) in enumerate(spec):
+        index.setdefault(name, []).append(position)
+
+    def one(name, default=0.0):
+        positions = index.get(name) or []
+        if positions and positions[0] < len(values):
+            try:
+                return float(values[positions[0]])
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    def pair(name):
+        positions = index.get(name) or []
+        out = []
+        for position in positions[:2]:
+            try:
+                out.append(float(values[position]))
+            except (TypeError, ValueError, IndexError):
+                out.append(0.0)
+        while len(out) < 2:
+            out.append(0.0)
+        return out[0], out[1]
+
+    # Линия тотала: сначала из коэффициентов, иначе со страницы, иначе
+    # стандартная для вида — ровно так же, как размечен тотал.
+    line = one("odds.total_line")
+    if line <= 0.0:
+        line = one("page.total_line")
+    if line <= 0.0:
+        try:
+            line = float(sports.default_total(sport))
+        except (TypeError, ValueError):
+            line = 0.0
+    handicap = one("odds.handicap")
+    avg_total_1, avg_total_2 = pair("p.recent.avg_match_total")
+    avg_margin_1, avg_margin_2 = pair("p.recent.avg_margin")
+    win_rate_1, win_rate_2 = pair("p.recent.win_rate")
+    btts_1, btts_2 = pair("p.recent.btts_rate")
+    days_1, days_2 = pair("p.recent.days_since_last")
+    h2h_total = one("h2h.avg_match_total", one("h2h.avg_set_total"))
+    h2h_margin = one("h2h.avg_match_margin")
+    h2h_btts = one("h2h.btts_rate")
+    # У настольного тенниса средний тотал очной встречи — это тотал
+    # партии, а линия в коэффициентах — тотал матча. Сравнивать их
+    # напрямую нельзя: берём линию партии.
+    h2h_line = tt_line(line) if sport == "table_tennis" else line
+    implied_1 = one("odds.implied_p1")
+    implied_2 = one("odds.implied_p2")
+    implied_draw = one("odds.implied_draw")
+    over_share = one("page.over_share_last5")
+    return values + [
+        avg_total_1 - line,
+        avg_total_2 - line,
+        (avg_total_1 + avg_total_2) / 2.0 - line,
+        h2h_total - h2h_line,
+        avg_margin_1 - handicap,
+        avg_margin_2 - handicap,
+        h2h_margin - handicap,
+        win_rate_1 - win_rate_2,
+        (btts_1 + btts_2) / 2.0 - h2h_btts,
+        implied_1 - implied_2,
+        implied_draw,
+        over_share - 0.5,
+        days_1 - days_2,
+    ]
+
+
+def model_features(model, features):
+    """Признаки в версии, на которой обучалась модель."""
+    version = 1
+    try:
+        version = int((model or {}).get("feature_version") or 1)
+    except (TypeError, ValueError):
+        version = 1
+    if version < 2:
+        return list(features or [])
+    return expand_features((model or {}).get("sport") or "", features)
 
 
 def _handicap_value(odds):
@@ -679,119 +788,335 @@ class Standardizer:
 # --------------------------------------------------------------------------
 
 
-def evaluate_model(model, standardizer, rows, heads):
-    """Считает точность на отложенной выборке.
+def _auc(values, labels):
+    """Площадь под ROC-кривой; None, если в выборке один класс."""
+    pairs = sorted(zip(values, labels))
+    size = len(pairs)
+    positives = sum(1 for _value, label in pairs if label >= 0.5)
+    negatives = size - positives
+    if not positives or not negatives:
+        return None
+    ranks = [0.0] * size
+    index = 0
+    while index < size:
+        end = index
+        while end + 1 < size and pairs[end + 1][0] == pairs[index][0]:
+            end += 1
+        rank = (index + end) / 2.0 + 1.0
+        for position in range(index, end + 1):
+            ranks[position] = rank
+        index = end + 1
+    total = sum(rank for rank, (_value, label) in zip(ranks, pairs)
+                if label >= 0.5)
+    return (total - positives * (positives + 1) / 2.0) / (
+        positives * negatives)
 
-    Возвращает словарь: accuracy (среднее по рынкам), baseline (базовый
-    уровень «всегда самый частый класс»), lift, точность по каждой голове
-    и точность решения по исходу.
+
+def _logloss(prob, target):
+    prob = min(max(float(prob), 1e-9), 1.0 - 1e-9)
+    return -(target * math.log(prob) + (1.0 - target) * math.log(1.0 - prob))
+
+
+def _logloss_logits(logits, targets):
+    if not targets:
+        return None
+    return sum(_logloss(sigmoid(value), target)
+               for value, target in zip(logits, targets)) / float(len(targets))
+
+
+class LinearHead:
+    """Логистическая регрессия на нескольких выбранных признаках.
+
+    Многослойная сеть на двух тысячах примеров часто проигрывает простой
+    линейной модели: у неё меньше параметров и ей труднее выучить шум.
+    Поэтому у каждой головы есть ещё и линейная модель, а на проверке
+    выбирается та, что честнее предсказывает вероятность.
     """
-    if not rows:
-        return {"accuracy": 0.0, "baseline": 0.0, "lift": 0.0, "heads": {},
-                "loss": 0.0}
-    winner_heads = [i for i, head in enumerate(heads)
-                    if head in ("p1", "p2", "draw")]
+
+    def __init__(self, indices=None, weights=None, bias=0.0):
+        self.indices = [int(value) for value in (indices or [])]
+        self.weights = [float(value) for value in (weights or [])]
+        self.bias = float(bias or 0.0)
+
+    def logit(self, x):
+        total = self.bias
+        for index, weight in zip(self.indices, self.weights):
+            if 0 <= index < len(x):
+                total += weight * float(x[index])
+        return total
+
+    def state(self):
+        return {"indices": list(self.indices),
+                "weights": [float(value) for value in self.weights],
+                "bias": float(self.bias)}
+
+    @classmethod
+    def load(cls, data):
+        data = data or {}
+        return cls(data.get("indices"), data.get("weights"),
+                   data.get("bias") or 0.0)
+
+
+def _linear_indices(X, y, count):
+    """Отбирает признаки с наибольшей одномерной связью с исходом."""
+    scored = []
+    width = len(X[0]) if X else 0
+    for index in range(width):
+        value = _auc([row[index] for row in X], y)
+        if value is not None:
+            scored.append((abs(value - 0.5), index))
+    scored.sort(reverse=True)
+    return [index for _score, index in scored[:max(1, count)]]
+
+
+def _fit_linear_head(X, y, weights, Xv, yv):
+    """Обучает линейную голову с L2 и ранней остановкой по проверке.
+
+    Возвращает (LinearHead, logloss на проверке). Если сигнала нет вовсе,
+    остаётся одна базовая вероятность — это честнее случайных весов.
+    """
+    if not X or not y:
+        return LinearHead(), None
+    positives = sum(1 for value in y if value >= 0.5)
+    prior = (positives + 1.0) / (len(y) + 2.0)
+    prior = min(max(prior, 1e-3), 1.0 - 1e-3)
+    count = min(12, max(3, len(X) // 50))
+    indices = _linear_indices(X, y, count)
+    if not indices:
+        return LinearHead([], [], math.log(prior / (1.0 - prior))), None
+    rows = [[row[index] for index in indices] for row in X]
+    valid = None
+    if Xv and yv:
+        valid = ([[row[index] for index in indices] for row in Xv], list(yv))
+    features = len(indices)
+    learn = 0.25
+    l2 = 0.02
+    epochs = 160 if len(rows) <= 4000 else 100
+    weight = [0.0] * features
+    bias = math.log(prior / (1.0 - prior))
+    best = (None, None)
+    samples = [(row, target, max(0.0, float(weight_value)))
+               for row, target, weight_value in zip(rows, y, weights)]
+    for epoch in range(epochs):
+        grad = [0.0] * features
+        grad_bias = 0.0
+        total = 0.0
+        for row, target, row_weight in samples:
+            if row_weight <= 0.0:
+                continue
+            value = bias
+            for k in range(features):
+                value += weight[k] * row[k]
+            delta = row_weight * (sigmoid(value) - target)
+            for k in range(features):
+                grad[k] += delta * row[k]
+            grad_bias += delta
+            total += row_weight
+        if total <= 0.0:
+            break
+        bias -= learn * grad_bias / total
+        for k in range(features):
+            weight[k] -= learn * (grad[k] / total + l2 * weight[k])
+        if valid is not None and (epoch % 8 == 7 or epoch == epochs - 1):
+            loss = _logloss_logits(
+                [bias + sum(weight[k] * row[k] for k in range(features))
+                 for row in valid[0]], valid[1])
+            if loss is not None and (best[1] is None or loss < best[1]):
+                best = (list(weight), loss, bias)
+    if best[0] is not None:
+        return LinearHead(indices, best[0], best[2]), best[1]
+    loss = None
+    if valid is not None:
+        loss = _logloss_logits(
+            [bias + sum(weight[k] * row[k] for k in range(features))
+             for row in valid[0]], valid[1])
+    return LinearHead(indices, weight, bias), loss
+
+
+def _head_temperature(model, head):
+    """Температура головы: общая, умноженная на её поправку."""
+    try:
+        base = float((model or {}).get("temperature") or 1.0)
+    except (TypeError, ValueError):
+        base = 1.0
+    if base <= 0.0:
+        base = 1.0
+    try:
+        scale = float(((model or {}).get("head_temperature") or {}).get(head, 1.0))
+    except (TypeError, ValueError):
+        scale = 1.0
+    if scale <= 0.0:
+        scale = 1.0
+    return base * scale
+
+
+def _apply_linear(model, z, values):
+    """Подменяет логиты голов, для которых выбрана линейная модель."""
+    linear = (model or {}).get("head_linear") or {}
+    source = (model or {}).get("head_source") or {}
+    for head, data in linear.items():
+        if source.get(head) != "linear":
+            continue
+        values[head] = LinearHead.load(data).logit(z)
+    return values
+
+
+def _model_logits_rows(model, rows):
+    """Логиты всех голов для строк выборки (сеть загружается один раз)."""
+    net = MLP.load(model or {})
+    standardizer = Standardizer((model or {}).get("standardizer", {}).get("mean"),
+                                (model or {}).get("standardizer", {}).get("std"))
+    heads = (model or {}).get("heads") or []
+    out = []
+    for row in rows:
+        z = standardizer.transform(model_features(model, row.get("x") or []))
+        logits = net.logits(z)
+        values = {head: logits[i] for i, head in enumerate(heads)
+                  if i < len(logits)}
+        out.append(_apply_linear(model, z, values))
+    return out
+
+
+def _metrics_from_probs(samples, heads):
+    """Считает точность по головам и по решениям рынков.
+
+    ``samples`` — список (вероятности, метки, маски). Рынок победителя
+    считается одним решением (кто вероятнее), а не тремя отдельными
+    головами: иначе редкая ничья весит столько же, сколько основной
+    исход, и общая точность врёт.
+    """
+    heads = list(heads or [])
     totals = {head: 0 for head in heads}
     correct = {head: 0 for head in heads}
     base = {head: [0, 0] for head in heads}
-    correct_winner = 0
-    total_winner = 0
+    head_loss = {head: 0.0 for head in heads}
     loss_sum = 0.0
     loss_n = 0
-    for row in rows:
-        x = standardizer.transform(row["x"])
-        probs = model.predict(x)
-        y = row["y"]
-        mask = row["m"]
+    winner_heads = [head for head in heads if head in ("p1", "p2", "draw")]
+    winner_total = 0
+    winner_correct = 0
+    winner_counts = {}
+    market_samples = {"winner": 0, "total": 0, "handicap": 0, "btts": 0}
+    market_correct = {"winner": 0, "total": 0, "handicap": 0, "btts": 0}
+    market_baseline = {"winner": 0, "total": 0, "handicap": 0, "btts": 0}
+    for probs, y, mask in samples:
+        y = y or []
+        mask = mask or []
         for index, head in enumerate(heads):
             if index >= len(y) or index >= len(mask) or mask[index] <= 0:
                 continue
+            prob = probs.get(head)
+            if prob is None:
+                continue
             totals[head] += 1
             truth = y[index] >= 0.5
-            if (probs[index] >= 0.5) == truth:
+            if (prob >= 0.5) == truth:
                 correct[head] += 1
             base[head][0 if truth else 1] += 1
-            p = min(max(float(probs[index]), 1e-9), 1.0 - 1e-9)
-            loss_sum += -(float(y[index]) * math.log(p) +
-                          (1.0 - float(y[index])) * math.log(1.0 - p))
+            head_loss[head] += _logloss(prob, float(y[index]))
+            loss_sum += _logloss(prob, float(y[index]))
             loss_n += 1
-        if winner_heads:
-            best = max(winner_heads, key=lambda i: probs[i] if mask[i] > 0
-                       else -1.0)
-            truth_index = -1
-            for i in winner_heads:
-                if mask[i] > 0 and y[i] >= 0.5:
-                    truth_index = i
+        active = []
+        for position, head in enumerate(heads):
+            if head not in winner_heads or head not in probs:
+                continue
+            if position < len(mask) and mask[position] > 0:
+                active.append((head, probs[head]))
+        if active:
+            best_head, _best = max(active, key=lambda item: item[1])
+            truth_head = None
+            for position, head in enumerate(heads):
+                if head not in winner_heads:
+                    continue
+                if position < len(y) and position < len(mask) \
+                        and mask[position] > 0 and y[position] >= 0.5:
+                    truth_head = head
                     break
-            if truth_index >= 0:
-                total_winner += 1
-                if best == truth_index:
-                    correct_winner += 1
+            if truth_head is not None:
+                winner_total += 1
+                winner_counts[truth_head] = winner_counts.get(truth_head, 0) + 1
+                if best_head == truth_head:
+                    winner_correct += 1
 
     head_accuracy = {}
     head_baseline = {}
     parts = []
-    base_parts = []
     for head in heads:
         if not totals[head]:
             continue
-        value = correct[head] / float(totals[head])
-        head_accuracy[head] = value
+        head_accuracy[head] = correct[head] / float(totals[head])
         head_baseline[head] = max(base[head]) / float(totals[head])
-        parts.append(value)
-        base_parts.append(head_baseline[head])
-    # Точность — по всем проверенным решениям, а не среднее по головам:
-    # иначе редкая голова (ничья, обе забьют) весит столько же, сколько
-    # основной рынок, и общая цифра врёт. Среднее по головам оставляем
-    # отдельным полем для диагностики.
-    decisions = sum(totals.values())
-    accuracy = (sum(correct.values()) / float(decisions)) if decisions else 0.0
-    baseline = (sum(max(base[head]) for head in heads) / float(decisions)) \
-        if decisions else 0.0
-    macro_accuracy = sum(parts) / len(parts) if parts else 0.0
-    winner_acc = (correct_winner / total_winner) if total_winner else 0.0
-    over_acc = head_accuracy.get("over", 0.0)
+        parts.append(head_accuracy[head])
+        head_loss[head] /= float(totals[head])
+    if winner_total:
+        market_samples["winner"] = winner_total
+        market_correct["winner"] = winner_correct
+        market_baseline["winner"] = max(winner_counts.values())
+    for kind, head in (("total", "over"), ("handicap", "handicap"),
+                       ("btts", "btts")):
+        if totals.get(head):
+            market_samples[kind] = totals[head]
+            market_correct[kind] = correct[head]
+            market_baseline[kind] = max(base[head])
+    all_samples = sum(market_samples.values())
+    all_correct = sum(market_correct.values())
+    all_base = sum(market_baseline.values())
+    accuracy = all_correct / float(all_samples) if all_samples else 0.0
+    baseline = all_base / float(all_samples) if all_samples else 0.0
     return {
         "accuracy": accuracy,
         "baseline": baseline,
-        "macro_accuracy": macro_accuracy,
         "lift": accuracy - baseline,
+        "macro_accuracy": sum(parts) / len(parts) if parts else 0.0,
         "loss": (loss_sum / loss_n) if loss_n else 0.0,
-        "winner_accuracy": winner_acc,
-        "over_accuracy": over_acc,
-        "winner_samples": total_winner,
+        "winner_accuracy": (winner_correct / float(winner_total))
+        if winner_total else 0.0,
+        "winner_baseline": (max(winner_counts.values()) / float(winner_total))
+        if winner_total else 0.0,
+        "winner_samples": winner_total,
+        "over_accuracy": head_accuracy.get("over", 0.0),
         "over_samples": totals.get("over", 0),
         "head_accuracy": head_accuracy,
         "head_baseline": head_baseline,
         "head_samples": totals,
+        "head_correct": correct,
+        "head_loss": head_loss,
+        "market_samples": market_samples,
+        "market_correct": market_correct,
+        "market_baseline": market_baseline,
     }
 
 
-def fit_temperature(model, standardizer, rows, heads,
-                    bounds=None, steps=60):
-    """Подбирает температуру, при которой уверенность не врёт.
-
-    Сеть с сигмоидой часто выдаёт 0.9 там, где права в 60% случаев:
-    порог уверенности тогда ничего не значит, а рынки выглядят
-    «уверенными» без оснований. Температура делит логиты, не меняя
-    порядок классов (точность та же), и делает вероятности честными.
-
-    Возвращает (temperature, loss). При пустой выборке — (1.0, None).
-    """
-    net = model if isinstance(model, MLP) else MLP.load(model or {})
-    heads = list(heads or [])
+def evaluate_model(model, standardizer, rows, heads):
+    """Точность сети на отложенной выборке (без линейных голов)."""
+    if not rows:
+        return _metrics_from_probs([], heads)
     samples = []
-    for row in rows or []:
-        y = row.get("y") or []
-        mask = row.get("m") or []
-        try:
-            z = net.logits(standardizer.transform(row["x"]))
-        except Exception:
-            continue
-        active = [(float(y[i]), float(z[i])) for i in range(len(z))
-                  if i < len(y) and i < len(mask) and mask[i] > 0]
-        if active:
-            samples.append(active)
+    for row in rows:
+        probs = model.predict(standardizer.transform(row["x"]))
+        values = {head: probs[index] for index, head in enumerate(heads)
+                  if index < len(probs)}
+        samples.append((values, row.get("y") or [], row.get("m") or []))
+    return _metrics_from_probs(samples, heads)
+
+
+def evaluate_hybrid(model, rows, heads):
+    """Точность итоговой модели: сеть, линейные головы и температура."""
+    if not rows:
+        return _metrics_from_probs([], heads)
+    logits_rows = _model_logits_rows(model, rows)
+    samples = []
+    for row, values in zip(rows, logits_rows):
+        probs = {}
+        for head, value in values.items():
+            temperature = _head_temperature(model, head)
+            probs[head] = sigmoid(value / temperature)
+        samples.append((probs, row.get("y") or [], row.get("m") or []))
+    return _metrics_from_probs(samples, heads)
+
+
+def _best_temperature(samples, bounds=None, steps=60):
+    """Температура, минимизирующая logloss на готовых логитах."""
     if not samples:
         return 1.0, None
     low, high = bounds or TEMPERATURE_RANGE
@@ -800,24 +1125,171 @@ def fit_temperature(model, standardizer, rows, heads,
     steps = max(2, int(steps))
     best_t, best_loss = 1.0, None
     for step in range(steps):
-        # Логарифмическая сетка: температуры 0.35..5 важны не линейно.
         ratio = step / float(steps - 1)
         temperature = low * ((high / low) ** ratio)
         loss = 0.0
-        count = 0
-        for active in samples:
-            for target, logit in active:
-                p = sigmoid(logit / temperature)
-                p = min(max(p, 1e-9), 1.0 - 1e-9)
-                loss += -(target * math.log(p) +
-                          (1.0 - target) * math.log(1.0 - p))
-                count += 1
-        if not count:
-            continue
-        loss /= count
+        for target, logit in samples:
+            loss += _logloss(sigmoid(logit / temperature), target)
+        loss /= float(len(samples))
         if best_loss is None or loss < best_loss:
             best_t, best_loss = temperature, loss
     return best_t, best_loss
+
+
+def fit_temperature(model, standardizer, rows, heads,
+                    bounds=None, steps=60):
+    """Подбирает общую температуру по логитам сети.
+
+    Сеть с сигмоидой часто выдаёт 0.9 там, где права в 60% случаев:
+    порог уверенности тогда ничего не значит. Температура делит логиты,
+    не меняя порядок классов (точность та же), и делает вероятности
+    честными. Возвращает (temperature, loss).
+    """
+    net = model if isinstance(model, MLP) else MLP.load(model or {})
+    samples = []
+    for row in rows or []:
+        y = row.get("y") or []
+        mask = row.get("m") or []
+        try:
+            z = net.logits(standardizer.transform(row["x"]))
+        except Exception:
+            continue
+        for index, logit in enumerate(z):
+            if index < len(y) and index < len(mask) and mask[index] > 0:
+                samples.append((float(y[index]), float(logit)))
+    return _best_temperature(samples, bounds=bounds, steps=steps)
+
+
+def fit_head_temperatures(model, rows, heads, steps=48):
+    """Температура каждой головы на отложенных матчах.
+
+    Возвращает (общая температура, поправки по головам, logloss). Общая
+    температура — геометрическое среднее: она задаёт масштаб, а поправки
+    голов делают вероятности честными там, где сеть особенно самоуверенна.
+    """
+    heads = list(heads or [])
+    logits_rows = _model_logits_rows(model, rows or [])
+    per_head = {}
+    losses = {}
+    for head in heads:
+        samples = []
+        for row, values in zip(rows or [], logits_rows):
+            if head not in values:
+                continue
+            y = row.get("y") or []
+            mask = row.get("m") or []
+            index = (model.get("heads") or []).index(head) \
+                if head in (model.get("heads") or []) else -1
+            if index < 0 or index >= len(y) or index >= len(mask) \
+                    or mask[index] <= 0:
+                continue
+            samples.append((float(y[index]), float(values[head])))
+        temperature, loss = _best_temperature(samples, steps=steps)
+        per_head[head] = temperature
+        losses[head] = loss
+    positive = [value for value in per_head.values() if value > 0.0]
+    if positive:
+        global_temperature = math.exp(
+            sum(math.log(value) for value in positive) / len(positive))
+    else:
+        global_temperature = 1.0
+    scales = {}
+    for head, temperature in per_head.items():
+        scales[head] = min(4.0, max(0.25, temperature / global_temperature))
+    return global_temperature, scales, losses
+
+
+def winner_ready(meta):
+    """Готов ли рынок победителя как одно совместное решение.
+
+    Отдельная точность голов П1/П2 сравнивается с «всегда самый частый
+    исход», а это завышенная планка для несбалансированных исходов.
+    Рынок победителя — выбор одного из П1/Ничья/П2, поэтому и проверять
+    нужно точность этого выбора, а не каждой головы по отдельности.
+    """
+    meta = meta or {}
+    # Достаточность данных — по обучающей выборке голов П1/П2, как и у
+    # остальных рынков. Точность берётся с проверки, но сама проверка на
+    # маленьком устройстве может быть короткой: требуем хотя бы 8 исходов.
+    coverage = meta.get("head_train_samples") or {}
+    train_samples = 0
+    if isinstance(coverage, dict):
+        values = [int(coverage.get(head) or 0) for head in ("p1", "p2")
+                  if head in coverage]
+        if values:
+            train_samples = min(values)
+    if train_samples < MARKET_MIN_TRAIN_SAMPLES:
+        try:
+            train_samples = int(meta.get("winner_samples") or 0)
+        except (TypeError, ValueError):
+            train_samples = 0
+    if train_samples < MARKET_MIN_TRAIN_SAMPLES:
+        return False
+    try:
+        checked = int(meta.get("winner_samples") or 0)
+    except (TypeError, ValueError):
+        checked = 0
+    if checked and checked < 8:
+        return False
+    accuracy = meta.get("winner_accuracy")
+    baseline = meta.get("winner_baseline")
+    if accuracy is None or baseline is None:
+        return False
+    try:
+        accuracy = float(accuracy)
+        baseline = float(baseline)
+        risk = min(1.0, max(0.0, float(meta.get("legacy_risk") or 0.0)))
+    except (TypeError, ValueError):
+        return False
+    required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * risk
+    if baseline >= MARKET_DEGENERATE_BASELINE:
+        return accuracy >= baseline - MARKET_MIN_LIFT
+    return accuracy >= baseline + required
+
+
+def ready_markets(meta, sport):
+    """Какие рынки вида спорта можно показывать по этой модели."""
+    meta = meta or {}
+    ready = {}
+    for kind in market_kinds(sport):
+        if kind == "winner":
+            ready[kind] = winner_ready(meta)
+        else:
+            head = {"total": "over", "handicap": "handicap",
+                    "btts": "btts"}.get(kind)
+            ready[kind] = bool(head) and head_ready(meta, head)
+    return ready
+
+
+def market_summary(metrics, ready, allow_degenerate=False):
+    """Точность по готовым рынкам: (accuracy, baseline, решений).
+
+    Рынки с почти постоянным исходом (база ≥ 90%) не показывают навык:
+    «обе забьют — нет» может быть верно всегда, но это не заслуга модели.
+    Такие рынки по-прежнему дают прогноз, но в общую точность не входят,
+    иначе она выглядит высокой без всякого перевеса.
+    """
+    metrics = metrics or {}
+    correct = 0
+    baseline = 0
+    total = 0
+    for kind, is_ready in (ready or {}).items():
+        if not is_ready:
+            continue
+        samples = int((metrics.get("market_samples") or {}).get(kind) or 0)
+        if samples <= 0:
+            continue
+        kind_baseline = int(
+            (metrics.get("market_baseline") or {}).get(kind) or 0) / float(samples)
+        if not allow_degenerate and \
+                kind_baseline >= MARKET_DEGENERATE_BASELINE:
+            continue
+        correct += int((metrics.get("market_correct") or {}).get(kind) or 0)
+        baseline += int((metrics.get("market_baseline") or {}).get(kind) or 0)
+        total += samples
+    if not total:
+        return 0.0, 0.0, 0
+    return correct / float(total), baseline / float(total), total
 
 
 def split_rows(rows, share=0.2):
@@ -880,9 +1352,24 @@ def evaluate_previous(sport, previous, rows, share=0.2):
         _spec, heads, _layout = feature_spec(sport)
         ordered = sorted(rows, key=lambda r: r.get("t", ""))
         _train, val_rows = split_rows(ordered, share=share)
-        net = MLP.load(previous)
-        standardizer = _standardizer_for(previous, _train)
-        return evaluate_model(net, standardizer, val_rows, heads)
+        samples = [(predict_probs(previous, row["x"]),
+                    row.get("y") or [], row.get("m") or [])
+                   for row in val_rows]
+        metrics = _metrics_from_probs(samples, heads)
+        # Сравнивать модели нужно по одной и той же мере: у новой модели
+        # accuracy считается по готовым рынкам, значит и у прежней тоже.
+        ready = ready_markets((previous or {}).get("meta") or {}, sport)
+        accuracy, baseline, decisions = market_summary(metrics, ready)
+        if not decisions:
+            accuracy = metrics.get("accuracy") or 0.0
+            baseline = metrics.get("baseline") or 0.0
+            decisions = sum((metrics.get("market_samples") or {}).values())
+        metrics["accuracy_all"] = metrics.get("accuracy")
+        metrics["accuracy"] = accuracy
+        metrics["baseline"] = baseline
+        metrics["lift"] = accuracy - baseline
+        metrics["ready_samples"] = decisions
+        return metrics
     except Exception:
         return None
 
@@ -962,8 +1449,16 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
     rows = sorted(rows, key=lambda r: r.get("t", ""))
     size = len(rows)
     train_rows, val_rows = split_rows(rows, share=validation_share)
-    standardizer = Standardizer().fit([row["x"] for row in train_rows])
-    input_size = len(train_rows[0]["x"])
+    # Признаки версии 2: производные разности считаются один раз, чтобы
+    # обучение и проверка сети видели тот же вектор, что и прогноз.
+    train_expanded = [expand_features(sport, row.get("x") or [])
+                      for row in train_rows]
+    val_expanded = [expand_features(sport, row.get("x") or [])
+                    for row in val_rows]
+    val_rows_for_model = [dict(row, x=x)
+                          for row, x in zip(val_rows, val_expanded)]
+    standardizer = Standardizer().fit(train_expanded)
+    input_size = len(train_expanded[0])
     output_size = len(heads)
     sizes = [input_size] + hidden_layers + [output_size]
 
@@ -975,13 +1470,13 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
     prepared = []
     legacy_active = 0
     risky_legacy = sports.normalize_sport(sport) in LEGACY_RISK_SPORTS
-    for row in train_rows:
+    for row, vector in zip(train_rows, train_expanded):
         version = _row_version(row)
         weight = _row_weight(sport, version)
         if (risky_legacy and version < LABEL_VERSION and any(
                 float(v) > 0 for v in (row.get("m") or []))):
             legacy_active += 1
-        prepared.append((standardizer.transform(row["x"]), row["y"],
+        prepared.append((standardizer.transform(vector), row["y"],
                          row["m"], weight))
     legacy_risk = (legacy_active / float(len(train_rows))) \
         if train_rows else 0.0
@@ -1009,7 +1504,8 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
             if pause is not None and step % 8 == 0:
                 pause()
         if val_rows and (epoch % 2 == 1 or epoch == epochs - 1):
-            metrics = evaluate_model(model, standardizer, val_rows, heads)
+            metrics = evaluate_model(model, standardizer,
+                                     val_rows_for_model, heads)
             # Лучшая эпоха: сначала точность, при равенстве — меньшая
             # потеря (более уверенные и калиброванные вероятности).
             score = (round(float(metrics.get("accuracy") or 0.0), 6),
@@ -1025,73 +1521,166 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
         model = MLP.load(best_state)
         metrics = best_metrics
     else:
-        metrics = evaluate_model(model, standardizer, val_rows, heads)
-    # Калибровка по отложенным матчам: сеть не должна быть увереннее,
-    # чем позволяет её реальная точность. Точность при этом не меняется,
-    # меняется только масштаб вероятностей.
-    temperature, calibration_loss = fit_temperature(
-        model, standardizer, val_rows, heads)
+        metrics = evaluate_model(model, standardizer,
+                                     val_rows_for_model, heads)
+
+    # Отдельная линейная модель на каждую голову. На реальных выборках
+    # она часто обгоняет многослойную сеть: у неё меньше параметров и ей
+    # труднее выучить шум. Сравниваем logloss на отложенных матчах и
+    # оставляем лучшую из двух моделей для каждой головы.
+    train_x = [standardizer.transform(vector) for vector in train_expanded]
+    val_x = [standardizer.transform(vector) for vector in val_expanded]
+    val_mlp_logits = [model.logits(x) for x in val_x]
+    head_linear = {}
+    head_source = {}
+    head_auc = {}
+    head_logloss = {}
+    for index, head in enumerate(heads):
+        train_index = [i for i, row in enumerate(train_rows)
+                       if index < len(row.get("m") or [])
+                       and float(row["m"][index]) > 0]
+        val_index = [i for i, row in enumerate(val_rows)
+                     if index < len(row.get("m") or [])
+                     and float(row["m"][index]) > 0]
+        if not train_index:
+            continue
+        Xtr = [train_x[i] for i in train_index]
+        ytr = [1.0 if float(train_rows[i]["y"][index]) >= 0.5 else 0.0
+               for i in train_index]
+        wtr = [_row_weight(sport, _row_version(train_rows[i]))
+               for i in train_index]
+        Xva = [val_x[i] for i in val_index]
+        yva = [1.0 if float(val_rows[i]["y"][index]) >= 0.5 else 0.0
+               for i in val_index]
+        linear, linear_loss = _fit_linear_head(Xtr, ytr, wtr, Xva, yva)
+        mlp_logits = [val_mlp_logits[i][index] for i in val_index
+                      if index < len(val_mlp_logits[i])]
+        mlp_loss = _logloss_logits(mlp_logits, yva) \
+            if len(mlp_logits) == len(yva) else None
+        if linear_loss is not None and (mlp_loss is None or
+                                        linear_loss < mlp_loss - 1e-4):
+            head_source[head] = "linear"
+            head_linear[head] = linear.state()
+            head_logloss[head] = linear_loss
+            head_probs = [sigmoid(linear.logit(x)) for x in Xva]
+        else:
+            head_source[head] = "mlp"
+            head_logloss[head] = mlp_loss
+            head_probs = [sigmoid(value) for value in mlp_logits]
+        head_auc[head] = _auc(head_probs, yva) if head_probs else None
+
     state = model.state()
-    state["temperature"] = temperature
     state.update({
         "sport": sport,
         "layout": layout,
         "heads": list(heads),
         "standardizer": standardizer.state(),
-        "meta": {
-            "samples": size,
-            "train_samples": len(train_rows),
-            "val_samples": len(val_rows),
-            "epochs": epochs,
-            "best_epoch": best_epoch or epochs,
-            "loss": loss,
-            "accuracy": metrics["accuracy"],
-            "baseline": metrics["baseline"],
-            "macro_accuracy": metrics.get("macro_accuracy", 0.0),
-            "lift": metrics["lift"],
-            "winner_accuracy": metrics.get("winner_accuracy", 0.0),
-            "over_accuracy": metrics.get("over_accuracy", 0.0),
-            "head_accuracy": metrics.get("head_accuracy") or {},
-            "head_baseline": metrics.get("head_baseline") or {},
-            "head_train_samples": head_train_samples,
-            "training_revision": TRAIN_REVISION,
-            "legacy_risk": round(legacy_risk, 4),
-            "legacy_weight": LEGACY_SAMPLE_WEIGHT,
-            "temperature": temperature,
-            "calibration_loss": calibration_loss,
-            "label_version": LABEL_VERSION,
-            "architecture": list(hidden_layers),
-            "activation": activation,
-            "learning_rate": lr,
-            "l2": l2,
-            "momentum": momentum,
-            "batch_size": batch_size,
-            "validation_share": validation_share,
-            "seed": seed,
-            "finetuned": bool(reuse),
-        },
+        "feature_version": FEATURE_VERSION,
+        "head_linear": head_linear,
+        "head_source": head_source,
+        "head_auc": head_auc,
+        "head_logloss": head_logloss,
     })
+    # Калибровка по отложенным матчам: сеть не должна быть увереннее,
+    # чем позволяет её реальная точность. Температура не меняет решение,
+    # только масштаб вероятностей.
+    temperature, head_temperature, calibration_loss = fit_head_temperatures(
+        state, val_rows, heads)
+    state["temperature"] = temperature
+    state["head_temperature"] = head_temperature
+    metrics = evaluate_hybrid(state, val_rows, heads)
+    ready = ready_markets({
+        "head_train_samples": head_train_samples,
+        "head_accuracy": metrics.get("head_accuracy") or {},
+        "head_baseline": metrics.get("head_baseline") or {},
+        "legacy_risk": legacy_risk,
+        "winner_accuracy": metrics.get("winner_accuracy"),
+        "winner_baseline": metrics.get("winner_baseline"),
+        "winner_samples": metrics.get("winner_samples"),
+    }, sport)
+    accuracy, baseline, decisions = market_summary(metrics, ready)
+    accuracy_all, baseline_all, decisions_all = market_summary(
+        metrics, {kind: True for kind in market_kinds(sport)})
+    if not decisions:
+        accuracy, baseline, decisions = accuracy_all, baseline_all, decisions_all
+    if not decisions:
+        accuracy, baseline, decisions = market_summary(
+            metrics, ready, allow_degenerate=True)
+    state["meta"] = {
+        "samples": size,
+        "train_samples": len(train_rows),
+        "val_samples": len(val_rows),
+        "epochs": epochs,
+        "best_epoch": best_epoch or epochs,
+        "loss": loss,
+        "accuracy": accuracy,
+        "baseline": baseline,
+        "macro_accuracy": metrics.get("macro_accuracy", 0.0),
+        "lift": accuracy - baseline,
+        "accuracy_all": accuracy_all,
+        "baseline_all": baseline_all,
+        "lift_all": accuracy_all - baseline_all,
+        "ready_markets": sorted(kind for kind, value in ready.items()
+                                if value),
+        "market_samples": metrics.get("market_samples") or {},
+        "market_correct": metrics.get("market_correct") or {},
+        "market_baseline": metrics.get("market_baseline") or {},
+        "winner_accuracy": metrics.get("winner_accuracy", 0.0),
+        "winner_baseline": metrics.get("winner_baseline", 0.0),
+        "winner_samples": metrics.get("winner_samples", 0),
+        "over_accuracy": metrics.get("over_accuracy", 0.0),
+        "head_accuracy": metrics.get("head_accuracy") or {},
+        "head_baseline": metrics.get("head_baseline") or {},
+        "head_samples": metrics.get("head_samples") or {},
+        "head_train_samples": head_train_samples,
+        "head_source": head_source,
+        "head_auc": head_auc,
+        "head_logloss": head_logloss,
+        "training_revision": TRAIN_REVISION,
+        "feature_version": FEATURE_VERSION,
+        "legacy_risk": round(legacy_risk, 4),
+        "legacy_weight": LEGACY_SAMPLE_WEIGHT,
+        "temperature": temperature,
+        "head_temperature": head_temperature,
+        "calibration_loss": calibration_loss,
+        "label_version": LABEL_VERSION,
+        "architecture": list(hidden_layers),
+        "activation": activation,
+        "learning_rate": lr,
+        "l2": l2,
+        "momentum": momentum,
+        "batch_size": batch_size,
+        "validation_share": validation_share,
+        "seed": seed,
+        "finetuned": bool(reuse),
+    }
     return state, {"ok": True, "metrics": metrics, "epochs": epochs,
                    "best_epoch": best_epoch or epochs,
                    "architecture": list(hidden_layers),
                    "activation": activation, "finetuned": bool(reuse)}
 
 
-def predict_probs(model, features):
-    """Возвращает словарь head -> вероятность для готовой модели."""
+def head_logits(model, features):
+    """Сырые логиты голов с учётом выбранных линейных моделей."""
     if not model:
         return {}
-    standardizer = Standardizer(model.get("standardizer", {}).get("mean"),
-                                model.get("standardizer", {}).get("std"))
+    standardizer = Standardizer(
+        (model.get("standardizer") or {}).get("mean"),
+        (model.get("standardizer") or {}).get("std"))
+    z = standardizer.transform(model_features(model, features))
     net = MLP.load(model)
-    try:
-        temperature = float(model.get("temperature") or 1.0)
-    except (TypeError, ValueError):
-        temperature = 1.0
-    if temperature <= 0.0:
-        temperature = 1.0
-    logits = net.logits(standardizer.transform(features))
-    probs = [sigmoid(value / temperature) for value in logits]
+    logits = net.logits(z)
     heads = model.get("heads") or []
-    return {head: probs[i] for i, head in enumerate(heads)
-            if i < len(probs)}
+    values = {head: logits[i] for i, head in enumerate(heads)
+              if i < len(logits)}
+    return _apply_linear(model, z, values)
+
+
+def predict_probs(model, features):
+    """Возвращает словарь head -> вероятность для готовой модели."""
+    values = head_logits(model, features)
+    probs = {}
+    for head, value in values.items():
+        temperature = _head_temperature(model, head)
+        probs[head] = sigmoid(value / temperature)
+    return probs

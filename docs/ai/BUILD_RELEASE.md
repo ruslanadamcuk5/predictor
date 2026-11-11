@@ -4,9 +4,9 @@
 
 | Параметр | Значение |
 |---|---|
-| `APP_VERSION` (`engine_api.py`) | 1.27.0 |
-| `versionName` (`app/build.gradle.kts`) | 1.27 |
-| `versionCode` | 28 |
+| `APP_VERSION` (`engine_api.py`) | 1.28.0 |
+| `versionName` (`app/build.gradle.kts`) | 1.28 |
+| `versionCode` | 29 |
 | `applicationId` | `by.betcity.predictor` |
 | `compileSdk` / `targetSdk` | 34 / 34 |
 | `minSdk` | 24 |
@@ -16,19 +16,19 @@
 | Android Gradle Plugin | 8.5.2 |
 | Gradle | 8.7+ (внешний; проверено на 8.9) |
 
-APK: `../Predictor-1.27.apk` относительно корня проекта.
+APK: `../Predictor-1.28.apk` относительно корня проекта.
 
-Размер: 39 502 813 байт; SHA-256: `c2124ce0f003a01d5040b4c8c7ec36be1daa60cc2f39b0c32445def981f58f45`.
+Размер: 38 970 602 байт; SHA-256: `e0958cea0bbea3b0d517a054b66b6b59f6facb38221c1cb4078ce31e22fa44f6`.
 
 ## 2. Где живёт версия
 
 Обновляйте **все** места:
 
-1. `app/src/main/python/engine_api.py` → `APP_VERSION = "1.27.0"`;
+1. `app/src/main/python/engine_api.py` → `APP_VERSION = "1.28.0"`;
 2. `app/build.gradle.kts` → `versionCode`, `versionName`;
 3. `README.md` — пользовательское описание;
 4. `docs/ai/CHANGELOG.md` — запись об изменениях;
-5. `server/online_app.py` → `SERVER_VERSION = "1.27.0"`;
+5. `server/online_app.py` → `SERVER_VERSION = "1.28.0"`;
 6. `docs/ai/PROJECT.md` — таблица текущего релиза;
 7. `docs/ai/BUILD_RELEASE.md` — эта таблица.
 
@@ -84,16 +84,16 @@ gradle --no-daemon assembleRelease
 ## 5. Копирование и проверка
 
 ```powershell
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.27.apk -Force
+Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.28.apk -Force
 
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.27.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.27.apk
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.28.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.28.apk
 ```
 
 Ожидаемые метаданные:
 
 ```text
-package: name='by.betcity.predictor' versionCode='28' versionName='1.27'
+package: name='by.betcity.predictor' versionCode='29' versionName='1.28'
 sdkVersion:'24'
 targetSdkVersion:'34'
 native-code: 'arm64-v8a' 'x86_64'
@@ -102,13 +102,13 @@ native-code: 'arm64-v8a' 'x86_64'
 Проверка содержимого:
 
 ```powershell
-python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.27.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
+python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.28.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
 ```
 
 `assets/chaquopy/app.imy` — zip с Python-модулями. Chaquopy 17 кладёт
 исходники `.py` (не `.pyc`): проверьте `sports.py`, `constructor_engine.py`,
 `analyzer.py`, `predictor_core.py`, `engine_api.py`, `rule_advisor.py`.
-Строка `1.27.0` должна присутствовать в `engine_api.py`.
+Строка `1.28.0` должна присутствовать в `engine_api.py`.
 
 Подпись текущей сборки (debug, Linux-машина):
 
@@ -233,7 +233,7 @@ python tools/check_live.py --base https://predictor.alwaysdata.net
 ## 7. Установка
 
 ```powershell
-adb install -r ..\Predictor-1.27.apk
+adb install -r ..\Predictor-1.28.apk
 ```
 
 `-r` сохраняет данные приложения. Не используйте `-r -d` без необходимости.
