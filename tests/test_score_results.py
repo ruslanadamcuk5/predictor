@@ -296,10 +296,15 @@ with open(os.path.join(legacy_dir, nn_trainer.MODELS_FILE), "w",
     }, "backups": {}}, handle)
 
 legacy = nn_trainer.NeuralTrainer(legacy_dir, Store({"neural": {}}), None)
-check("миграция удалила испорченные виды",
+check("миграция убрала испорченные виды из обучения",
       sorted(legacy._samples) == ["hockey"], sorted(legacy._samples))
-check("миграция удалила их модели",
+check("миграция убрала их модели из прогнозов",
       sorted(legacy._models) == ["hockey"], sorted(legacy._models))
+check("испорченные строки сохранены в архиве",
+      legacy.status()["archived"] == 3, legacy.status()["archived"])
+check("испорченные модели сохранены в карантине",
+      sorted(legacy._quarantined) == ["football", "tennis", "volleyball"],
+      sorted(legacy._quarantined))
 check("миграция помечена в данных",
       os.path.exists(os.path.join(legacy_dir, nn_trainer.SCORE_FIX_FILE)))
 

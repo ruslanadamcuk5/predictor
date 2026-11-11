@@ -28,11 +28,15 @@ import sports
 SAMPLES_FILE = "nn_samples.jsonl"
 PENDING_FILE = "nn_pending.json"
 MODELS_FILE = "nn_model.json"
+ARCHIVE_FILE = "nn_archive.jsonl"
 SCORE_FIX_FILE = "nn_score_fix_v2.json"
 
-MAX_SAMPLES_PER_SPORT = 1500
-MAX_PENDING = 800
-MAX_PENDING_AGE_HOURS = 72   # непроверяемые примеры старше этого удаляем
+# Пределы — только страховка от бесконечного роста. Всё, что выходит за
+# них, не удаляется, а переносится в архив (nn_archive.jsonl) и остаётся
+# доступным для экспорта и ручного разбора.
+MAX_SAMPLES_PER_SPORT = 20000
+MAX_PENDING = 5000
+MAX_PENDING_AGE_HOURS = 72   # сколько ждать счёт, прежде чем убрать в архив
 TRAIN_CHUNK = 120             # примеров в одном куске обучения
 TRAIN_INTERVAL = 120          # секунд между проверками обучения
 PLATEAU_ROUNDS = 3            # раундов без роста точности — остановка
@@ -80,11 +84,13 @@ class NeuralTrainer:
         self._samples = {}
         self._models = {}
         self._backups = {}
+        self._quarantined = {}
+        self._archived = 0           # строк в nn_archive.jsonl
         self._train_flag = False
         self._train_force = False
         self._training = False
         self._last_train_at = ""
-        self._dropped = 0            # примеров не удалось разметить
+        self._dropped = 0            # устаревшее поле статуса (совместимость)
         self._plateau_skip = {}      # спорт -> сколько примеров при плато
         self._stop = threading.Event()
         self._thread = None
@@ -274,70 +280,131 @@ class NeuralTrainer:
                 if isinstance(data, dict):
                     self._models = data.get("sports") or {}
                     self._backups = data.get("backups") or {}
+                    self._quarantined = data.get("quarantined") or {}
         except Exception as exc:
             self._log("Нейросеть: не удалось прочитать модели: %s" % exc)
+        try:
+            path = self._path(ARCHIVE_FILE)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as handle:
+                    self._archived = sum(1 for line in handle if line.strip())
+        except Exception as exc:
+            self._log("Нейросеть: не удалось прочитать архив: %s" % exc)
         self._migrate_bad_scores()
 
+    @staticmethod
+    def _label_version(row):
+        try:
+            return int((row or {}).get("v") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _archive(self, records, reason, kind):
+        """Сохраняет строки в архив, ничего не удаляя.
+
+        Архив — обычный JSONL: каждая строка дополнена временем, причиной
+        и типом (pending/sample). Его можно выгрузить из приложения и
+        разобрать вручную; обучение архив не использует.
+        """
+        records = [record for record in (records or [])
+                   if isinstance(record, dict)]
+        if not records:
+            return 0
+        try:
+            with open(self._path(ARCHIVE_FILE), "a", encoding="utf-8") as handle:
+                for record in records:
+                    item = dict(record)
+                    item["_archived_at"] = _now()
+                    item["_archive_reason"] = reason
+                    item["_archive_kind"] = kind
+                    handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            self._log("Нейросеть: не удалось записать архив: %s" % exc)
+            return 0
+        self._archived += len(records)
+        return len(records)
+
     def _migrate_bad_scores(self):
-        """Один раз убирает выборку, размеченную по неверному счёту.
+        """Один раз убирает из обучения строки, размеченные неверным счётом.
 
         До версии 1.23 проверка матчей брала первую пару ``sc_inter`` за
         счёт матча. У футбола это текущий тайм, у волейбола и тенниса —
         одна партия/сет. Метки победителя и тотала из таких строк
-        poisoned обучение, поэтому затронутые виды начинают заново.
-        Настольный теннис и виды с периодами (хоккей, баскетбол) не
-        затронуты: их счёт совпадал с итогом матча.
+        poisoned обучение, поэтому затронутые виды начинали заново.
+
+        Теперь данные не удаляются: строки без версии разметки (или со
+        старой версией) уходят в архив, а модели — в карантин. Новые
+        строки с ``LABEL_VERSION`` остаются в выборке.
         """
         marker = self._path(SCORE_FIX_FILE)
         if os.path.exists(marker):
             return
         affected = ("volleyball", "tennis", "football")
-        dropped = 0
-        models_dropped = 0
+        archived = 0
+        quarantined = 0
+        failed = False
         for sport in affected:
-            rows = self._samples.get(sport)
-            if rows:
-                dropped += len(rows)
-                self._samples.pop(sport, None)
+            rows = self._samples.get(sport) or []
+            stale = [row for row in rows
+                     if self._label_version(row) < nn_core.LABEL_VERSION]
+            if stale:
+                saved = self._archive(stale, "score_parser_v2", "sample")
+                if saved < len(stale):
+                    # Архив не записался — не трогаем выборку, чтобы
+                    # не потерять данные. Маркер не ставим: повторим.
+                    failed = True
+                    continue
+                keep = [row for row in rows
+                        if self._label_version(row) >= nn_core.LABEL_VERSION]
+                if keep:
+                    self._samples[sport] = keep
+                else:
+                    self._samples.pop(sport, None)
+                archived += saved
             if sport in self._models:
-                self._models.pop(sport, None)
-                models_dropped += 1
+                self._quarantined[sport] = self._models.pop(sport)
+                quarantined += 1
             if sport in self._backups:
-                self._backups.pop(sport, None)
+                self._quarantined[sport + "_backup"] = \
+                    self._backups.pop(sport)
+        if failed:
+            self._log("Нейросеть: архив недоступен — миграция выборки "
+                      "отложена, данные не тронуты")
+            return
         try:
-            if dropped:
+            if archived:
                 self._rewrite_samples()
-            if models_dropped:
+            if quarantined or archived:
                 self._save_models()
             _atomic_write(marker, json.dumps({
                 "at": _now(),
                 "reason": "score parser fix: match score from sc_ev",
                 "sports": list(affected),
-                "samples_dropped": dropped,
-                "models_dropped": models_dropped,
+                "samples_archived": archived,
+                "models_quarantined": quarantined,
             }, ensure_ascii=False))
         except Exception as exc:
             self._log("Нейросеть: миграция выборки не удалась: %s" % exc)
             return
-        if dropped or models_dropped:
-            self._log("Нейросеть: удалена выборка, размеченная по неверному "
-                      "счёту (%d примеров, %d моделей): волейбол, теннис, "
-                      "футбол" % (dropped, models_dropped))
+        if archived or quarantined:
+            self._log("Нейросеть: в архив убрана выборка, размеченная по "
+                      "неверному счёту (%d примеров, %d моделей в карантине): "
+                      "волейбол, теннис, футбол" % (archived, quarantined))
 
     def _save_pending(self):
         try:
             _atomic_write(self._path(PENDING_FILE),
-                          json.dumps(self._pending[-MAX_PENDING:],
-                                     ensure_ascii=False))
+                          json.dumps(self._pending, ensure_ascii=False))
         except Exception as exc:
             self._log("Нейросеть: не удалось сохранить ожидающие образцы: %s" % exc)
 
     def _save_models(self):
         try:
             _atomic_write(self._path(MODELS_FILE),
-                          json.dumps({"version": 2, "updated_at": _now(),
+                          json.dumps({"version": 3, "updated_at": _now(),
                                       "sports": self._models,
-                                      "backups": self._backups},
+                                      "backups": self._backups,
+                                      "quarantined": self._quarantined},
                                      ensure_ascii=False))
         except Exception as exc:
             self._log("Нейросеть: не удалось сохранить модели: %s" % exc)
@@ -354,17 +421,22 @@ class NeuralTrainer:
             return
         bucket = self._samples.setdefault(sport, [])
         bucket.extend(rows)
-        if len(bucket) > MAX_SAMPLES_PER_SPORT * 2:
-            keep = bucket[-MAX_SAMPLES_PER_SPORT:]
-            self._samples[sport] = keep
-            self._rewrite_samples()
+        if len(bucket) > MAX_SAMPLES_PER_SPORT:
+            # Переполнение не удаляет примеры: старые строки уходят в
+            # архив и остаются доступными для экспорта. Если архив не
+            # записался, строки остаются в выборке — терять нельзя.
+            overflow = bucket[:-MAX_SAMPLES_PER_SPORT]
+            if self._archive(overflow, "samples_overflow",
+                             "sample") == len(overflow):
+                self._samples[sport] = bucket[-MAX_SAMPLES_PER_SPORT:]
+                self._rewrite_samples()
 
     def _rewrite_samples(self):
         path = self._path(SAMPLES_FILE)
         try:
             with open(path, "w", encoding="utf-8") as handle:
                 for sport, rows in self._samples.items():
-                    for row in rows[-MAX_SAMPLES_PER_SPORT:]:
+                    for row in rows:
                         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
         except Exception as exc:
             self._log("Нейросеть: не удалось перезаписать выборку: %s" % exc)
@@ -382,13 +454,11 @@ class NeuralTrainer:
                 features, meta = nn_core.build_features(match, stats, sport)
             if not features:
                 return False
-            # Мало данных от метрик — пример бесполезен, шум в обучении.
-            if float((meta or {}).get("coverage") or 0.0) < 0.25:
-                return False
             team1 = (match or {}).get("team1", "")
             team2 = (match or {}).get("team2", "")
             if not team1 or not team2:
                 return False
+            coverage = float((meta or {}).get("coverage") or 0.0)
             record = {
                 "sport": sport,
                 "teams": [team1, team2],
@@ -401,7 +471,15 @@ class NeuralTrainer:
                 "line": meta.get("line"),
                 "handicap": meta.get("handicap"),
                 "layout": meta.get("layout"),
+                "coverage": round(coverage, 4),
             }
+            if coverage < 0.25:
+                # Мало данных от метрик — обучать на таком векторе нельзя,
+                # но и терять пример не нужно: он остаётся в архиве.
+                # Повторно такой матч не собираем, чтобы архив не рос
+                # бесконечно от одного и того же события.
+                self._archive([record], "low_coverage", "sample")
+                return False
             with self._lock:
                 for item in self._pending:
                     # Одна и та же пара может играть несколько матчей
@@ -413,7 +491,9 @@ class NeuralTrainer:
                         return False
                 self._pending.append(record)
                 if len(self._pending) > MAX_PENDING:
+                    overflow = self._pending[:-MAX_PENDING]
                     self._pending = self._pending[-MAX_PENDING:]
+                    self._archive(overflow, "pending_overflow", "pending")
                 self._save_pending()
             return True
         except Exception as exc:
@@ -450,12 +530,16 @@ class NeuralTrainer:
 
         finished — словарь (sport, team1, team2) -> финальный счёт.
         Если матч уже ушёл из линии, берём последний увиденный счёт
-        самого образца — но только когда он финальный (для настольного
-        тенниса это 4 победы в партиях). Совсем старые примеры, которые
-        разметить невозможно, удаляются, иначе очередь растёт вечно.
+        самого образца — но только когда он финальный. Для сетов
+        достаточно определённого победителя: счёт «3:1» без очков
+        партий тоже размечается, а тотал и фора выключаются маской.
+
+        Примеры, которые так и не удалось разметить, не удаляются:
+        после MAX_PENDING_AGE_HOURS они уходят в архив.
         """
         labeled = 0
-        expired = 0
+        archived_expired = 0
+        expired = []
         rest = []
         now = datetime.now()
         with self._lock:
@@ -471,30 +555,42 @@ class NeuralTrainer:
                 usable = bool(score_text) and (
                     from_line or self._score_complete(sport, score_text))
                 if usable and from_line and sport != "table_tennis":
+                    # Событие уже помечено завершённым, поэтому хватает
+                    # определённого победителя: тотал может быть неизвестен.
                     parsed = sports.parse_score(sport, score_text)
-                    usable = sports.score_final(sport, parsed)
+                    usable = sports.score_decided(sport, parsed)
                 if not usable:
                     if self._too_old(record, now):
-                        expired += 1
-                        continue
-                    rest.append(record)
+                        expired.append(record)
+                    else:
+                        rest.append(record)
                     continue
                 rows = self._make_rows(record, score_text)
                 if not rows:
                     if self._too_old(record, now):
-                        expired += 1
-                        continue
-                    rest.append(record)
+                        expired.append(record)
+                    else:
+                        rest.append(record)
                     continue
                 self._append_samples(sport, rows)
                 labeled += 1
             if labeled or expired:
+                if expired:
+                    archived_expired = self._archive(
+                        expired, "unlabeled_timeout", "pending")
+                    if archived_expired < len(expired):
+                        # Архив не записался: оставляем примеры в очереди,
+                        # чтобы не потерять их. Повторим позже.
+                        rest.extend(expired)
                 self._pending = rest
                 self._save_pending()
-        if expired:
-            self._dropped += expired
+        if archived_expired:
             self._log("Нейросеть: %d примеров не размечено — матч завершился "
-                      "и ушёл из линии (удалены)" % expired)
+                      "и ушёл из линии (перенесены в архив)"
+                      % archived_expired)
+        elif expired:
+            self._log("Нейросеть: %d примеров не размечено, но архив "
+                      "недоступен — оставлены в очереди" % len(expired))
         if labeled:
             self.request_train()
         return labeled
@@ -505,7 +601,10 @@ class NeuralTrainer:
 
         Для командных видов с периодами (футбол, хоккей, баскетбол)
         последний счёт без отметки «матч завершён» не считается финальным:
-        по нему нельзя отличить середину матча от конца.
+        по нему нельзя отличить середину матча от конца. Для волейбола
+        и настольного тенниса финал однозначен по числу побед (3 и 4).
+        У тенниса формат встречи неизвестен, поэтому без отметки
+        «завершён» доверяем только трём выигранным сетам.
         """
         sport = sports.normalize_sport(sport)
         if sports.profile(sport)["score_mode"] != "sets":
@@ -513,11 +612,15 @@ class NeuralTrainer:
         parsed = sports.parse_score(sport, score_text)
         if not parsed:
             return False
-        if sport == "volleyball" and max(parsed["match"]) < 3:
-            # Без отметки «матч завершён» счёт 2:0/2:1 может быть серединой
-            # матча до трёх побед. Не размечаем его как финал.
-            return False
-        return sports.score_final(sport, parsed)
+        high = max(int(parsed["match"][0]), int(parsed["match"][1]))
+        low = min(int(parsed["match"][0]), int(parsed["match"][1]))
+        if sport == "table_tennis":
+            return high == 4 and low <= 3
+        if sport == "volleyball":
+            return high == 3 and low <= 2
+        if sport == "tennis":
+            return high == 3 and low <= 2
+        return sports.score_decided(sport, parsed)
 
     @staticmethod
     def _too_old(record, now=None):
@@ -549,6 +652,13 @@ class NeuralTrainer:
                 "m": [float(v) for v in item.get("m") or []],
                 "t": record.get("created") or _now(),
                 "g": group,
+                # Версия разметки и исходный счёт: по ним видно, откуда
+                # взялись метки, и строку можно проверить или разметить
+                # заново, не гадая.
+                "v": int(item.get("v") or nn_core.LABEL_VERSION),
+                "score": score_text,
+                "line": record.get("line"),
+                "handicap": record.get("handicap"),
             })
         return rows
 
@@ -819,6 +929,32 @@ class NeuralTrainer:
         return True
 
     # ---------------------------------------------------------------- прогноз
+    @staticmethod
+    def _market_heads(sport, kind):
+        """Головы сети, от которых зависит рынок."""
+        if kind == "winner":
+            if sports.profile(sport)["has_draw"]:
+                return ("p1", "p2", "draw")
+            return ("p1", "p2")
+        return {"total": ("over",), "handicap": ("handicap",),
+                "btts": ("btts",)}.get(kind, ())
+
+    @classmethod
+    def _market_ready(cls, model, sport, kind):
+        """Рынок обучен достаточно уверенно, чтобы давать прогноз.
+
+        Мало примеров или точность не выше «всегда самый частый класс» —
+        рынок молчит. Иначе случайный сигнал выглядит как уверенный.
+        """
+        meta = (model or {}).get("meta") or {}
+        heads = cls._market_heads(sport, kind)
+        return bool(heads) and all(nn_core.head_ready(meta, head)
+                                   for head in heads)
+
+    def _ready_markets(self, model, sport, markets):
+        return {kind: self._market_ready(model, sport, kind)
+                for kind in (markets or [])}
+
     def predict(self, match, stats, sport, features=None, meta=None):
         """Прогнозы нейросети по матчу (пустой список, если не готова)."""
         sport = sports.normalize_sport(sport)
@@ -852,6 +988,7 @@ class NeuralTrainer:
             line = nn_core.tt_line(line)
         handicap = (meta or {}).get("handicap")
         markets = self.markets_for(sport)
+        ready = self._ready_markets(model, sport, markets)
         accuracy = float(meta_model.get("accuracy") or 0.0)
         samples = int(meta_model.get("samples") or 0)
         base_info = "Нейросеть: %d примеров, точность %.0f%%" % (samples, accuracy * 100)
@@ -882,12 +1019,12 @@ class NeuralTrainer:
                 return predictions
             for number in range(1, cfg["sets"] + 1):
                 for item in self._predict_set(probs, number, min_conf, markets,
-                                              line):
+                                              line, ready):
                     predictions.append(item)
             return predictions
 
         # ---- командные виды: победитель ----
-        if "winner" in markets:
+        if ready.get("winner"):
             candidates = [("П1", probs.get("p1", 0.0))]
             if has_draw:
                 candidates.append(("Ничья", probs.get("draw", 0.0)))
@@ -898,7 +1035,7 @@ class NeuralTrainer:
                     "match", "Матч (П1 / Ничья / П2)" if has_draw else "Матч (П1 / П2)",
                     "winner", side, side, value))
         # ---- командные виды: тотал ----
-        if "total" in markets:
+        if ready.get("total"):
             over = probs.get("over")
             if over is not None:
                 if over >= 0.5:
@@ -910,7 +1047,7 @@ class NeuralTrainer:
                         "match", "Тотал матча (ТБ/ТМ)", "total", total_side, verdict,
                         confidence, threshold=line))
         # ---- командные виды: фора ----
-        if "handicap" in markets and handicap is not None:
+        if ready.get("handicap") and handicap is not None:
             prob = probs.get("handicap")
             if prob is not None:
                 confidence = max(prob, 1.0 - prob)
@@ -926,7 +1063,7 @@ class NeuralTrainer:
                                        _fmt_line(value)),
                         confidence, handicap=value))
         # ---- командные виды: обе забьют ----
-        if "btts" in markets:
+        if ready.get("btts"):
             prob = probs.get("btts")
             if prob is not None:
                 confidence = max(prob, 1.0 - prob)
@@ -938,12 +1075,14 @@ class NeuralTrainer:
                         confidence))
         return predictions
 
-    def _predict_set(self, probs, number, min_conf, markets=None, line=None):
+    def _predict_set(self, probs, number, min_conf, markets=None, line=None,
+                     ready=None):
         rows = []
         markets = markets or ["winner", "total"]
+        ready = ready or {kind: True for kind in markets}
         p1 = probs.get("p1", 0.0)
         p2 = probs.get("p2", 0.0)
-        if "winner" in markets and max(p1, p2) >= min_conf:
+        if ready.get("winner") and max(p1, p2) >= min_conf:
             side = "П1" if p1 >= p2 else "П2"
             rows.append({
                 "target": "set%d" % number,
@@ -959,7 +1098,7 @@ class NeuralTrainer:
                 "models_info": "Нейросеть: партия %d" % number,
                 "source": "neural",
             })
-        if "total" in markets:
+        if ready.get("total"):
             over = probs.get("over")
             if over is not None:
                 threshold = float(nn_core.tt_line(line))
@@ -984,6 +1123,44 @@ class NeuralTrainer:
                     })
         return rows
 
+    # ---------------------------------------------------------------- экспорт
+    def export_snapshot(self):
+        """Полная выгрузка нейросети: выборка, очередь, архив и модели.
+
+        Нужна, чтобы изучить реальные собранные данные на устройстве:
+        сервер хранит только результаты прогнозов, а векторы признаков
+        остаются в приватной папке приложения.
+        """
+        archived = []
+        try:
+            path = self._path(ARCHIVE_FILE)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            archived.append(json.loads(line))
+                        except Exception:
+                            archived.append({"_raw": line})
+        except Exception as exc:
+            self._log("Нейросеть: не удалось прочитать архив: %s" % exc)
+        with self._lock:
+            payload = {
+                "generated_at": _now(),
+                "label_version": nn_core.LABEL_VERSION,
+                "market_min_samples": nn_core.MARKET_MIN_TRAIN_SAMPLES,
+                "samples": {sport: list(rows)
+                            for sport, rows in self._samples.items()},
+                "pending": list(self._pending),
+                "archive": archived,
+                "models": dict(self._models),
+                "backups": dict(self._backups),
+                "quarantined": dict(self._quarantined),
+            }
+        return json.dumps(payload, ensure_ascii=False, indent=1)
+
     # ---------------------------------------------------------------- статус
     def status(self):
         cfg = self.config()
@@ -1000,6 +1177,24 @@ class NeuralTrainer:
             model = models.get(sport) or {}
             meta = model.get("meta") or {}
             samples_count = samples.get(sport, 0)
+            _spec, sport_heads, _layout = nn_core.feature_spec(sport)
+            head_report = {}
+            for head in sport_heads:
+                head_samples = int(
+                    (meta.get("head_train_samples") or {}).get(head) or 0)
+                head_accuracy = float(
+                    (meta.get("head_accuracy") or {}).get(head) or 0.0)
+                head_baseline = float(
+                    (meta.get("head_baseline") or {}).get(head) or 0.0)
+                head_report[head] = {
+                    "samples": head_samples,
+                    "accuracy": head_accuracy,
+                    "baseline": head_baseline,
+                    "lift": head_accuracy - head_baseline,
+                    "ready": nn_core.head_ready(meta, head),
+                }
+            markets_ready = [kind for kind in nn_core.market_kinds(sport)
+                             if self._market_ready(model, sport, kind)]
             history = self._history(model)
             rows = list(self._samples.get(sport) or [])
             needed = max(0, cfg["min_samples"] - samples_count)
@@ -1058,6 +1253,9 @@ class NeuralTrainer:
                 "selected": sport in selected,
                 "markets": nn_core.market_kinds(sport),
                 "markets_enabled": self.markets_for(sport),
+                "markets_ready": markets_ready,
+                "head_report": head_report,
+                "label_version": int(meta.get("label_version") or 0),
                 "ready": bool(model) and samples_count >= cfg["min_samples"],
                 "history": [
                     {"at": item.get("at", ""),
@@ -1123,7 +1321,16 @@ class NeuralTrainer:
             "market_labels": nn_core.MARKET_LABELS,
             "total_samples": total_samples,
             "pending": len(pending),
+            "archived": self._archived,
             "dropped": self._dropped,
+            "label_version": nn_core.LABEL_VERSION,
+            "market_min_samples": nn_core.MARKET_MIN_TRAIN_SAMPLES,
+            "data_health": {
+                "samples": total_samples,
+                "pending": len(pending),
+                "archived": self._archived,
+                "quarantined_models": len(self._quarantined),
+            },
             "sports": sports_info,
             "ready_sports": len(ready),
             "trained": bool(ready),
@@ -1137,6 +1344,21 @@ class NeuralTrainer:
     def reset(self, clear_samples=True):
         with self._lock:
             if clear_samples:
+                # Даже явный сброс не теряет данные: активные строки
+                # сначала уходят в архив, и их можно выгрузить.
+                total = len(self._pending) + sum(
+                    len(rows) for rows in self._samples.values())
+                saved = 0
+                if self._pending:
+                    saved += self._archive(self._pending, "manual_reset",
+                                           "pending")
+                for sport, rows in self._samples.items():
+                    if rows:
+                        saved += self._archive(rows, "manual_reset", "sample")
+                if saved < total:
+                    self._log("Нейросеть: архив недоступен — сброс отменён, "
+                              "данные не тронуты")
+                    return False
                 self._pending = []
                 self._samples = {}
                 self._dropped = 0

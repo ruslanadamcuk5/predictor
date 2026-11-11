@@ -534,6 +534,38 @@ def score_final(sport, parsed):
     return parsed.get("total") is not None
 
 
+def score_decided(sport, parsed):
+    """Победитель матча уже определён (тотал может быть неизвестен).
+
+    Betcity не всегда отдаёт очки партий: у волейбола встречается только
+    итог по партиям («3:1»). ``score_final`` такие счёта отвергает, потому
+    что тотал посчитать не из чего, но исход матча известен точно.
+    Для обучения победителя этого достаточно: тотал и фора выключаются
+    маской, а пример не теряется.
+
+    Для тенниса формат встречи (best-of-3 или best-of-5) в счёте не
+    указан, поэтому 2 выигранных сета считаем решением только для счёта
+    из завершённого события. Кэшированный счёт без отметки «завершён»
+    проверяется строже — см. ``nn_trainer._score_complete``.
+    """
+    if not parsed:
+        return False
+    sport = normalize_sport(sport)
+    mode = profile(sport)["score_mode"]
+    if mode != "sets":
+        return parsed.get("total") is not None
+    high = max(int(parsed["match"][0]), int(parsed["match"][1]))
+    low = min(int(parsed["match"][0]), int(parsed["match"][1]))
+    if sport == "table_tennis":
+        return high == 4 and low <= 3
+    if sport == "volleyball":
+        # Матч до трёх побед: 0:4 и 4:0 — не финал, а битый счёт.
+        return high == 3 and low <= 2
+    if sport == "tennis":
+        return (high == 2 and low <= 1) or (high == 3 and low <= 2)
+    return high >= 2
+
+
 def record_from_score(sport, parsed, flipped=False):
     """Готовит поля для нормализованных записей конструктора."""
     data = orient_score(parsed, flipped)

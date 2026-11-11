@@ -299,6 +299,7 @@
           <button class="export-btn" data-export="results"><span>Результаты</span><small>.csv</small></button>
           <button class="export-btn" data-export="csv"><span>Ставки</span><small>.csv</small></button>
           <button class="export-btn" data-export="predictions"><span>Прогнозы</span><small>.json</small></button>
+          <button class="export-btn" data-export="neural"><span>Нейросеть</span><small>.json</small></button>
           <button class="export-btn" data-export="stats"><span>Сводка</span><small>.json</small></button>
           <button class="export-btn" data-export="logs"><span>Логи</span><small>.txt</small></button>
           <button class="export-btn" data-export="settings"><span>Настройки</span><small>.json</small></button>
@@ -756,6 +757,90 @@
         <div class="field">
           <label>Партий в прогнозе (настольный теннис)</label>
           <div class="input-suffix"><input type="number" id="setNnSets" min="1" max="5" step="1"><span>партий</span></div>
+        </div>
+        <div class="field-hint mt"><b>Параметры сети и обучения.</b> Меняйте их,
+          если модель учится плохо: сначала архитектуру и скорость обучения,
+          затем регуляризацию. После смены архитектуры или активации сеть
+          обучается заново.</div>
+        <div class="field">
+          <label>Архитектура (скрытые слои)</label>
+          <select id="setNnArch">
+            <option value="16">1 слой · 16 нейронов — быстро, по умолчанию</option>
+            <option value="32">1 слой · 32 нейрона — больше ёмкости</option>
+            <option value="64">1 слой · 64 нейрона — для больших выборок</option>
+            <option value="16,16">2 слоя · 16 → 16 — мягкая нелинейность</option>
+            <option value="32,16">2 слоя · 32 → 16 — универсальный баланс</option>
+            <option value="64,32">2 слоя · 64 → 32 — сложные зависимости</option>
+            <option value="32,32,16">3 слоя · 32 → 32 → 16 — только от 300 матчей</option>
+          </select>
+          <div class="field-hint">Больше нейронов — сложнее закономерности,
+            но выше риск переобучения. На 50–150 матчах начните с 16 или 32.</div>
+        </div>
+        <div class="field">
+          <label>Активация скрытого слоя</label>
+          <select id="setNnActivation">
+            <option value="tanh">tanh — гладкая, устойчивая (по умолчанию)</option>
+            <option value="relu">ReLU — быстрее учится, но нейроны могут «умирать»</option>
+            <option value="sigmoid">sigmoid — мягкие вероятности, медленнее tanh</option>
+          </select>
+          <div class="field-hint">Смена активации сбрасывает старые веса: сеть
+            обучается заново с выбранной функцией.</div>
+        </div>
+        <div class="field">
+          <label>Эпох при первом обучении</label>
+          <div class="input-suffix"><input type="number" id="setNnEpochs" min="1" max="300" step="1"><span>эпох</span></div>
+          <div class="field-hint">Сколько проходов по выборке при обучении с
+            нуля. Допустимо 1–300, по умолчанию 12. Больше 100 обычно ведёт
+            к переобучению.</div>
+        </div>
+        <div class="field">
+          <label>Эпох при дообучении</label>
+          <div class="input-suffix"><input type="number" id="setNnFinetune" min="1" max="150" step="1"><span>эпох</span></div>
+          <div class="field-hint">Проходы по новым данным для уже готовой
+            модели. Допустимо 1–150, по умолчанию 4. Мало эпох — медленная
+            адаптация, много — забывание старого.</div>
+        </div>
+        <div class="field">
+          <label>Скорость обучения</label>
+          <div class="input-suffix"><input type="number" id="setNnLr" min="0.001" max="0.5" step="0.001"><span>lr</span></div>
+          <div class="field-hint">Шаг изменения весов. Допустимо 0.001–0.5,
+            по умолчанию 0.05. Слишком большой — точность скачет, слишком
+            малый — обучение почти стоит.</div>
+        </div>
+        <div class="field">
+          <label>L2-регуляризация</label>
+          <div class="input-suffix"><input type="number" id="setNnL2" min="0" max="0.05" step="0.0005"><span>λ</span></div>
+          <div class="field-hint">Штраф за большие веса против переобучения.
+            Допустимо 0–0.05, по умолчанию 0.001. 0 — без штрафа; выше
+            0.01 — модель становится слишком осторожной.</div>
+        </div>
+        <div class="field">
+          <label>Момент (инерция)</label>
+          <div class="input-suffix"><input type="number" id="setNnMomentum" min="0" max="0.99" step="0.01"><span>0–0.99</span></div>
+          <div class="field-hint">Сглаживает шаги оптимизатора. Допустимо
+            0–0.99, по умолчанию 0.9. Выше 0.95 — быстрее, но возможны
+            проскоки минимума.</div>
+        </div>
+        <div class="field">
+          <label>Размер мини-батча</label>
+          <div class="input-suffix"><input type="number" id="setNnBatch" min="4" max="256" step="4"><span>примеров</span></div>
+          <div class="field-hint">Сколько матчей усредняется за один шаг.
+            Допустимо 4–256, по умолчанию 32. Меньше — шумнее, но точнее
+            на малых выборках; больше — стабильнее и медленнее.</div>
+        </div>
+        <div class="field">
+          <label>Доля матчей для проверки</label>
+          <div class="input-suffix"><input type="number" id="setNnValidation" min="10" max="40" step="5"><span>%</span></div>
+          <div class="field-hint">Какая часть свежих матчей не участвует в
+            обучении, а служит экзаменом. Допустимо 10–40%, по умолчанию
+            20%. Меньше — больше данных для обучения, но шумнее оценка.</div>
+        </div>
+        <div class="field">
+          <label>Зерно случайности (seed)</label>
+          <div class="input-suffix"><input type="number" id="setNnSeed" min="1" max="999999" step="1"><span>1–999999</span></div>
+          <div class="field-hint">Фиксирует инициализацию и перемешивание.
+            Одинаковое зерно даёт повторяемый результат; меняйте его, чтобы
+            проверить, не была ли удача случайной.</div>
         </div>
         <div class="field-hint mt">Сеть учится на всех проверенных матчах, даже
           если по ним не было прогноза. Данные и модель хранятся на телефоне.

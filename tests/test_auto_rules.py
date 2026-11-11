@@ -345,6 +345,6 @@ if money_items:
     check("проверка: отдаёт EV", review_item.get("ev") is not None,
           review_item)
 
-check("версия движка 1.24.0", api.APP_VERSION == "1.24.0", api.APP_VERSION)
+check("версия движка 1.25.0", api.APP_VERSION == "1.25.0", api.APP_VERSION)
 
 print("OK — пройдено проверок: %d" % len(PASSED))

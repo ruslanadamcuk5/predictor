@@ -2837,7 +2837,7 @@ class PredictorEnsemble:
                         continue
                     parsed = sports.parse_score(sport_id, score)
                     if sport_id != "table_tennis" and \
-                            not sports.score_final(sport_id, parsed):
+                            not sports.score_decided(sport_id, parsed):
                         continue
                     key = (sport_id, raw.get("name_ht", ""), raw.get("name_at", ""))
                     result[key] = score
@@ -2854,7 +2854,7 @@ class PredictorEnsemble:
                     continue
                 if sport_id != "table_tennis":
                     parsed = sports.parse_score(sport_id, score)
-                    if not sports.score_final(sport_id, parsed):
+                    if not sports.score_decided(sport_id, parsed):
                         continue
                 key = (sport_id, entry.get("team1", ""), entry.get("team2", ""))
                 result.setdefault(key, score)

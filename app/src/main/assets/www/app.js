@@ -541,12 +541,12 @@ function renderNeural(status) {
     } else {
       scope = ' · ни один вид не выбран';
     }
-    const dropped = num(s.dropped);
-    const droppedText = dropped
-      ? ` · ${dropped} не удалось разметить (матч ушёл из линии)` : '';
+    const archived = num(s.archived);
+    const archivedText = archived
+      ? ` · ${archived} сохранено в архиве` : '';
     stats.innerHTML = `${num(samples)} <span class="muted">размеченных примеров · ` +
       `${num(pending)} ждут результата · видов готово ${ready} из ${total}` +
-      `${esc(scope)}${esc(droppedText)}</span>`;
+      `${esc(scope)}${esc(archivedText)}</span>`;
   }
 
   const hint = $('nnHint');
@@ -583,6 +583,13 @@ function renderNeural(status) {
           `(база ${baseline}%, ${lift >= 0 ? '+' : ''}${lift} п.п.)`
         : `${num(item.pending)} ждут результата`;
       if (item.samples && winner) meta += ` · исход ${winner}%`;
+      if (item.samples) {
+        const labels = s.market_labels || {};
+        const readyMarkets = Array.isArray(item.markets_ready)
+          ? item.markets_ready.map(kind => labels[kind] || kind) : [];
+        meta += ` · рынки: ${readyMarkets.length
+          ? readyMarkets.join(', ') : 'пока не готовы'}`;
+      }
       if (item.samples && valN) {
         meta += ` · проверка на ${valN} примерах`;
         if (valN < 40) meta += ' (мало — цифра шумная)';

@@ -107,6 +107,51 @@ MARKET_LABELS = {
     "btts": "Обе забьют",
 }
 
+# Версия правил разметки. Строки выборки без версии (или со старой
+# версией) могли быть размечены прежним парсером счёта; их не обучаем
+# вслепую, а сохраняем в архиве.
+LABEL_VERSION = 3
+
+# Минимум обучающих примеров на голову, чтобы рынок давал прогноз.
+# Рынок без покрытия или без перевеса над «всегда самый частый класс»
+# молчит: редкие и случайные сигналы не должны выглядеть уверенными.
+MARKET_MIN_TRAIN_SAMPLES = 20
+MARKET_MIN_LIFT = 0.01
+# Если класс почти всегда один (ничьих нет, обе забьют всегда «нет»),
+# базовый уровень близок к 100%, и требовать перевеса бессмысленно:
+# достаточно не ошибаться на этом классе.
+MARKET_DEGENERATE_BASELINE = 0.9
+
+
+def head_ready(meta, head):
+    """Готова ли голова рынка к прогнозам по своей выборке.
+
+    Старые модели не хранят покрытие по головам — для них проверка
+    пропускается, чтобы обновление не выключило уже обученные рынки.
+    """
+    meta = meta or {}
+    coverage = meta.get("head_train_samples") or {}
+    if not isinstance(coverage, dict) or head not in coverage:
+        return True
+    try:
+        samples = int(coverage.get(head) or 0)
+    except (TypeError, ValueError):
+        samples = 0
+    if samples < MARKET_MIN_TRAIN_SAMPLES:
+        return False
+    accuracy = (meta.get("head_accuracy") or {}).get(head)
+    baseline = (meta.get("head_baseline") or {}).get(head)
+    if accuracy is None or baseline is None:
+        return True
+    try:
+        accuracy = float(accuracy)
+        baseline = float(baseline)
+        if baseline >= MARKET_DEGENERATE_BASELINE:
+            return accuracy >= baseline - MARKET_MIN_LIFT
+        return accuracy >= baseline + MARKET_MIN_LIFT
+    except (TypeError, ValueError):
+        return True
+
 
 def market_kinds(sport):
     """Рынки, доступные нейросети для вида спорта."""
@@ -278,6 +323,7 @@ def labels_for_match(sport, score_text, line=None, handicap=None):
                       1.0 if (p1 + p2) > threshold else 0.0],
                 "m": [1.0, 1.0, 1.0],
                 "set": index,
+                "v": LABEL_VERSION,
             })
         return rows
 
@@ -329,7 +375,22 @@ def labels_for_match(sport, score_text, line=None, handicap=None):
          1.0 if match_known else 0.0,
          1.0 if has_draw else 0.0, total_mask,
          handicap_mask, btts_mask]
-    return [{"y": y, "m": m, "set": 0}]
+
+    # Согласованность победителя: если итог матча («3:1») не совпадает
+    # с числом выигранных партий, доверять нельзя ни тому, ни другому.
+    # Гасим головы победителя, но сохраняем строку ради тотала.
+    periods = parsed.get("periods") or []
+    if profile.get("score_mode") == "sets" and len(periods) >= 2:
+        won = (sum(1 for a, b in periods if a > b),
+               sum(1 for a, b in periods if b > a))
+        if won != (p1, p2):
+            m[0] = m[1] = m[2] = 0.0
+
+    # Строка без единой активной головы не нужна обучению: в ней нет
+    # ни одного проверенного исхода. Такие строки не создаём.
+    if not any(value > 0 for value in m):
+        return []
+    return [{"y": y, "m": m, "set": 0, "v": LABEL_VERSION}]
 
 
 # --------------------------------------------------------------------------
@@ -610,6 +671,7 @@ def evaluate_model(model, standardizer, rows, heads):
                     correct_winner += 1
 
     head_accuracy = {}
+    head_baseline = {}
     parts = []
     base_parts = []
     for head in heads:
@@ -617,15 +679,24 @@ def evaluate_model(model, standardizer, rows, heads):
             continue
         value = correct[head] / float(totals[head])
         head_accuracy[head] = value
+        head_baseline[head] = max(base[head]) / float(totals[head])
         parts.append(value)
-        base_parts.append(max(base[head]) / float(totals[head]))
-    accuracy = sum(parts) / len(parts) if parts else 0.0
-    baseline = sum(base_parts) / len(base_parts) if base_parts else 0.0
+        base_parts.append(head_baseline[head])
+    # Точность — по всем проверенным решениям, а не среднее по головам:
+    # иначе редкая голова (ничья, обе забьют) весит столько же, сколько
+    # основной рынок, и общая цифра врёт. Среднее по головам оставляем
+    # отдельным полем для диагностики.
+    decisions = sum(totals.values())
+    accuracy = (sum(correct.values()) / float(decisions)) if decisions else 0.0
+    baseline = (sum(max(base[head]) for head in heads) / float(decisions)) \
+        if decisions else 0.0
+    macro_accuracy = sum(parts) / len(parts) if parts else 0.0
     winner_acc = (correct_winner / total_winner) if total_winner else 0.0
     over_acc = head_accuracy.get("over", 0.0)
     return {
         "accuracy": accuracy,
         "baseline": baseline,
+        "macro_accuracy": macro_accuracy,
         "lift": accuracy - baseline,
         "loss": (loss_sum / loss_n) if loss_n else 0.0,
         "winner_accuracy": winner_acc,
@@ -633,6 +704,7 @@ def evaluate_model(model, standardizer, rows, heads):
         "winner_samples": total_winner,
         "over_samples": totals.get("over", 0),
         "head_accuracy": head_accuracy,
+        "head_baseline": head_baseline,
         "head_samples": totals,
     }
 
@@ -769,6 +841,12 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
 
     prepared = [(standardizer.transform(row["x"]), row["y"], row["m"])
                 for row in train_rows]
+    head_train_samples = {}
+    for index, head in enumerate(heads):
+        head_train_samples[head] = sum(
+            1 for row in train_rows
+            if index < len(row.get("m") or [])
+            and float(row["m"][index]) > 0)
     rng = random.Random(seed + 3)
     loss = 0.0
     step = 0
@@ -819,10 +897,14 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
             "loss": loss,
             "accuracy": metrics["accuracy"],
             "baseline": metrics["baseline"],
+            "macro_accuracy": metrics.get("macro_accuracy", 0.0),
             "lift": metrics["lift"],
             "winner_accuracy": metrics.get("winner_accuracy", 0.0),
             "over_accuracy": metrics.get("over_accuracy", 0.0),
             "head_accuracy": metrics.get("head_accuracy") or {},
+            "head_baseline": metrics.get("head_baseline") or {},
+            "head_train_samples": head_train_samples,
+            "label_version": LABEL_VERSION,
             "architecture": list(hidden_layers),
             "activation": activation,
             "learning_rate": lr,

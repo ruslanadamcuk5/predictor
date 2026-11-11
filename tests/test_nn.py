@@ -131,6 +131,19 @@ check("подписи рынков есть",
       set(nn_core.MARKET_LABELS) == {"winner", "total", "handicap", "btts"},
       nn_core.MARKET_LABELS)
 
+weak_meta = {
+    "head_train_samples": {"p1": 40, "p2": 40, "draw": 40, "over": 40},
+    "head_accuracy": {"p1": 0.5, "p2": 0.5, "draw": 1.0, "over": 0.5},
+    "head_baseline": {"p1": 0.5, "p2": 0.5, "draw": 1.0, "over": 0.5},
+}
+check("голова без перевеса над базой не готова",
+      nn_core.head_ready(weak_meta, "p1") is False, weak_meta)
+check("постоянный класс не блокирует голову",
+      nn_core.head_ready(weak_meta, "draw") is True, weak_meta)
+check("мало примеров — голова не готова",
+      nn_core.head_ready({"head_train_samples": {"p1": 5}},
+                         "p1") is False)
+
 rows = nn_core.labels_for_match("football", "2:1 (1:0)", 2.5, -1.5)
 check("меток футбола шесть", len(rows[0]["y"]) == 6, rows)
 check("фора: П1 не закрывает -1.5", rows[0]["y"][4] == 0.0, rows)
@@ -144,6 +157,38 @@ rows = nn_core.labels_for_match("basketball", "80:75", 160.5, -5.5)
 check("у баскетбола нет рынка обе забьют", rows[0]["m"][5] == 0.0, rows)
 rows = nn_core.labels_for_match("football", "1:0", 2.5, None)
 check("без линии форы маска выключена", rows[0]["m"][4] == 0.0, rows)
+
+# Финал по партиям без очков: победитель известен, тотал и фора — нет.
+vb_rows = nn_core.labels_for_match("volleyball", "3:1", 179.5, -7.5)
+check("волейбол 3:1: строка есть", len(vb_rows) == 1, vb_rows)
+check("волейбол 3:1: победитель размечен",
+      vb_rows and vb_rows[0]["y"][0] == 1.0 and vb_rows[0]["y"][1] == 0.0,
+      vb_rows)
+check("волейбол 3:1: тотал выключен маской",
+      vb_rows and vb_rows[0]["m"][3] == 0.0, vb_rows)
+check("волейбол 3:1: фора выключена маской",
+      vb_rows and vb_rows[0]["m"][4] == 0.0, vb_rows)
+check("волейбол 3:1: версия разметки",
+      vb_rows and vb_rows[0].get("v") == nn_core.LABEL_VERSION, vb_rows)
+vb_parsed = sports.parse_score("volleyball", "3:1")
+check("волейбол 3:1: победитель определён",
+      sports.score_decided("volleyball", vb_parsed) is True, vb_parsed)
+check("волейбол 3:1: строгий финал требует тотал",
+      sports.score_final("volleyball", vb_parsed) is False, vb_parsed)
+check("волейбол 2:1: победитель не определён",
+      sports.score_decided("volleyball",
+                           sports.parse_score("volleyball", "2:1")) is False)
+check("теннис 2:0 из завершённого события — решение",
+      sports.score_decided("tennis",
+                           sports.parse_score("tennis", "2:0")) is True)
+
+# Итог матча, не совпадающий с партиями, не должен учить победителя.
+bad = nn_core.labels_for_match("volleyball",
+                               "3:0 (18:25, 25:20, 25:22, 25:18)", 179.5)
+check("несогласованный победитель погашен",
+      bad and bad[0]["m"][0] == 0.0 and bad[0]["m"][1] == 0.0, bad)
+check("тотал при несогласованном счёте сохранён",
+      bad and bad[0]["m"][3] == 1.0, bad)
 
 # ------------------------------------------------------------------ сама сеть
 rows = []
@@ -425,6 +470,15 @@ check("тренд вниз",
 res = json.loads(api.api_neural(json.dumps({"action": "status"})))
 check("api статус ok", res.get("ok") is True, res)
 check("api отдаёт статистику", res["status"]["total_samples"] == 80, res["status"])
+snapshot = json.loads(trainer.export_snapshot())
+check("экспорт нейросети содержит выборку",
+      len(snapshot.get("samples", {}).get("football") or []) == 80,
+      {k: len(v) for k, v in (snapshot.get("samples") or {}).items()})
+check("экспорт содержит версию разметки",
+      snapshot.get("label_version") == nn_core.LABEL_VERSION, snapshot)
+check("экспорт содержит исходный счёт строки",
+      (snapshot["samples"]["football"][0].get("score") in ("2:0", "0:2")),
+      snapshot["samples"]["football"][:1])
 res = json.loads(api.api_neural(json.dumps({"action": "train"})))
 check("api обучение ok", res.get("ok") is True, res)
 res = json.loads(api.api_neural(json.dumps({"action": "disable"})))
@@ -527,6 +581,30 @@ partial.store_sample(partial_match, partial_stats, "table_tennis")
 check("незавершённый матч не размечается",
       partial.collect_results({}) == 0, partial.status()["pending"])
 
+# Счёт только по партиям («3:1») — достаточное основание разметить
+# победителя; тотал и фора выключаются, пример не теряется.
+vb_home = nn_trainer.NeuralTrainer(tempfile.mkdtemp(prefix="nn_volley_"),
+                                   eng.settings, None)
+vb_match, vb_stats = make_case("Волейбол А", "Волейбол Б", True,
+                               sport="volleyball")
+vb_match["current_score"] = "2:1"
+check("пример волейбола сохранён",
+      vb_home.store_sample(vb_match, vb_stats, "volleyball") is True,
+      vb_home.status()["pending"])
+check("волейбол размечен по счёту партий",
+      vb_home.collect_results({
+          ("volleyball", "Волейбол А", "Волейбол Б"): "3:1"}) == 1,
+      vb_home.status())
+vb_samples = vb_home._samples.get("volleyball") or []
+check("пример волейбола не потерян", len(vb_samples) == 1, vb_samples)
+check("в примере сохранён исходный счёт",
+      vb_samples and vb_samples[0].get("score") == "3:1", vb_samples[:1])
+check("в примере есть версия разметки",
+      vb_samples and vb_samples[0].get("v") == nn_core.LABEL_VERSION,
+      vb_samples[:1])
+check("тотал волейбола выключен без очков",
+      vb_samples and vb_samples[0]["m"][3] == 0.0, vb_samples[:1])
+
 old = nn_trainer.NeuralTrainer(tempfile.mkdtemp(prefix="nn_old_"),
                                eng.settings, None)
 old._pending = [{
@@ -535,9 +613,17 @@ old._pending = [{
     "last_score": "", "x": [0.0], "line": 2.5,
 }]
 check("зависший пример не размечается", old.collect_results({}) == 0)
-check("зависший пример удалён", old.status()["pending"] == 0,
+check("зависший пример убран из очереди", old.status()["pending"] == 0,
       old.status()["pending"])
-check("счётчик удалённых примеров", old.status()["dropped"] == 1,
-      old.status()["dropped"])
+check("зависший пример сохранён в архиве", old.status()["archived"] == 1,
+      old.status()["archived"])
+archive_path = os.path.join(old.data_dir, nn_trainer.ARCHIVE_FILE)
+with open(archive_path, "r", encoding="utf-8") as handle:
+    archived_rows = [json.loads(line) for line in handle if line.strip()]
+check("в архиве есть причина", archived_rows and
+      archived_rows[0].get("_archive_reason") == "unlabeled_timeout",
+      archived_rows[:1])
+check("архив не удаляет пример", archived_rows and
+      archived_rows[0].get("teams") == ["Старый", "Матч"], archived_rows[:1])
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

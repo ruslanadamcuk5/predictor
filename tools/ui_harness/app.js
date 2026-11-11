@@ -541,12 +541,12 @@ function renderNeural(status) {
     } else {
       scope = ' · ни один вид не выбран';
     }
-    const dropped = num(s.dropped);
-    const droppedText = dropped
-      ? ` · ${dropped} не удалось разметить (матч ушёл из линии)` : '';
+    const archived = num(s.archived);
+    const archivedText = archived
+      ? ` · ${archived} сохранено в архиве` : '';
     stats.innerHTML = `${num(samples)} <span class="muted">размеченных примеров · ` +
       `${num(pending)} ждут результата · видов готово ${ready} из ${total}` +
-      `${esc(scope)}${esc(droppedText)}</span>`;
+      `${esc(scope)}${esc(archivedText)}</span>`;
   }
 
   const hint = $('nnHint');
@@ -583,6 +583,13 @@ function renderNeural(status) {
           `(база ${baseline}%, ${lift >= 0 ? '+' : ''}${lift} п.п.)`
         : `${num(item.pending)} ждут результата`;
       if (item.samples && winner) meta += ` · исход ${winner}%`;
+      if (item.samples) {
+        const labels = s.market_labels || {};
+        const readyMarkets = Array.isArray(item.markets_ready)
+          ? item.markets_ready.map(kind => labels[kind] || kind) : [];
+        meta += ` · рынки: ${readyMarkets.length
+          ? readyMarkets.join(', ') : 'пока не готовы'}`;
+      }
       if (item.samples && valN) {
         meta += ` · проверка на ${valN} примерах`;
         if (valN < 40) meta += ' (мало — цифра шумная)';
@@ -1100,6 +1107,21 @@ function renderAiSettings(status) {
   renderAiProviders();
 }
 
+function aiIntValue(value, fallback, min, max) {
+  // Отсутствие значения — это не ноль. Настройки ИИ по умолчанию:
+  // 1 запрос за цикл и 40 в день; явный 0 пользователя сохраняется.
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+function aiIntField(id, fallback, min, max) {
+  const el = $(id);
+  if (!el) return fallback;
+  return aiIntValue(String(el.value).trim(), fallback, min, max);
+}
+
 function collectAiSettings() {
   // Возвращаем только блок ai. Раньше здесь клонировался весь снимок
   // настроек и через Object.assign перекрывал уже собранные поля
@@ -1117,8 +1139,8 @@ function collectAiSettings() {
       embed: $('setAiEmbed') ? $('setAiEmbed').checked : false,
       sports: aiSportIds(),
       markets: aiMarketsMap(),
-      per_cycle: Math.max(0, Math.min(5, num($('setAiPerCycle').value) || 0)),
-      per_day: Math.max(0, Math.min(1000, num($('setAiPerDay').value) || 0)),
+      per_cycle: aiIntField('setAiPerCycle', 1, 0, 5),
+      per_day: aiIntField('setAiPerDay', 40, 0, 1000),
       min_confidence: Math.max(0.3, Math.min(0.95,
         (num($('setAiConfidence').value) || 50) / 100)),
     },
@@ -2324,6 +2346,44 @@ function renderSettings(s) {
   }
   const nnSets = $('setNnSets');
   if (nnSets) nnSets.value = String(num(neural.sets) || 3);
+  const nnParams = neural.params || neural;
+  if ($('setNnArch')) {
+    const layers = nnParams.hidden_layers;
+    $('setNnArch').value = Array.isArray(layers)
+      ? layers.join(',') : String(layers || '16');
+  }
+  if ($('setNnActivation')) {
+    $('setNnActivation').value = nnParams.activation || 'tanh';
+  }
+  if ($('setNnEpochs')) {
+    $('setNnEpochs').value = String(num(nnParams.epochs) || 12);
+  }
+  if ($('setNnFinetune')) {
+    $('setNnFinetune').value = String(num(nnParams.finetune_epochs) || 4);
+  }
+  if ($('setNnLr')) {
+    const lr = num(nnParams.learning_rate);
+    $('setNnLr').value = String(lr > 0 ? lr : 0.05);
+  }
+  if ($('setNnL2')) {
+    const l2 = num(nnParams.l2);
+    $('setNnL2').value = String(nnParams.l2 === 0 ? 0 : (l2 || 0.001));
+  }
+  if ($('setNnMomentum')) {
+    const momentum = num(nnParams.momentum);
+    $('setNnMomentum').value =
+      String(nnParams.momentum === 0 ? 0 : (momentum || 0.9));
+  }
+  if ($('setNnBatch')) {
+    $('setNnBatch').value = String(num(nnParams.batch_size) || 32);
+  }
+  if ($('setNnValidation')) {
+    $('setNnValidation').value =
+      String(Math.round((num(nnParams.validation_share) || 0.2) * 100));
+  }
+  if ($('setNnSeed')) {
+    $('setNnSeed').value = String(Math.round(num(nnParams.seed) || 7));
+  }
   if (Array.isArray(neural.sports)) {
     setNnSports(neural.sports);
   } else {
@@ -2348,8 +2408,12 @@ function renderSettings(s) {
   if ($('setAiThinking')) $('setAiThinking').checked = ai.thinking !== false;
   if ($('setAiAutoPredict')) $('setAiAutoPredict').checked = !!ai.auto_predict;
   if ($('setAiEmbed')) $('setAiEmbed').checked = !!ai.embed;
-  if ($('setAiPerCycle')) $('setAiPerCycle').value = String(num(ai.per_cycle) || 0);
-  if ($('setAiPerDay')) $('setAiPerDay').value = String(num(ai.per_day) || 0);
+  if ($('setAiPerCycle')) {
+    $('setAiPerCycle').value = String(aiIntValue(ai.per_cycle, 1, 0, 5));
+  }
+  if ($('setAiPerDay')) {
+    $('setAiPerDay').value = String(aiIntValue(ai.per_day, 40, 0, 1000));
+  }
   if ($('setAiConfidence')) {
     $('setAiConfidence').value =
       String(Math.round((num(ai.min_confidence) || 0.5) * 100));
@@ -2486,6 +2550,13 @@ function collectSettings() {
   const perSport = num($('setPerSport').value);
   s.max_matches_per_sport = perSport === 0
     ? 0 : Math.max(1, Math.min(50, perSport || 10));
+  const nnNum = (id, fallback, low, high, integer) => {
+    const field = $(id);
+    const raw = field && field.value !== '' ? Number(field.value) : NaN;
+    let value = Number.isFinite(raw) ? raw : fallback;
+    if (integer) value = Math.round(value);
+    return Math.max(low, Math.min(high, value));
+  };
   s.neural = {
     enabled: $('setNnEnabled') ? $('setNnEnabled').checked : false,
     auto_train: $('setNnAutoTrain') ? $('setNnAutoTrain').checked : true,
@@ -2495,6 +2566,16 @@ function collectSettings() {
     min_confidence: Math.max(0.5, Math.min(0.95,
       (num($('setNnConfidence').value) || 55) / 100)),
     sets: Math.max(1, Math.min(5, num($('setNnSets').value) || 3)),
+    hidden_layers: $('setNnArch') ? $('setNnArch').value : '16',
+    activation: $('setNnActivation') ? $('setNnActivation').value : 'tanh',
+    epochs: nnNum('setNnEpochs', 12, 1, 300, true),
+    finetune_epochs: nnNum('setNnFinetune', 4, 1, 150, true),
+    learning_rate: nnNum('setNnLr', 0.05, 0.001, 0.5, false),
+    l2: nnNum('setNnL2', 0.001, 0, 0.05, false),
+    momentum: nnNum('setNnMomentum', 0.9, 0, 0.99, false),
+    batch_size: nnNum('setNnBatch', 32, 4, 256, true),
+    validation_share: nnNum('setNnValidation', 20, 10, 40, true) / 100,
+    seed: nnNum('setNnSeed', 7, 1, 999999, true),
     sports: nnSportIds(),
     markets: nnMarketsMap(),
   };

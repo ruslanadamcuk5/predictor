@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.24.0"
+APP_VERSION = "1.25.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -1952,6 +1952,16 @@ class Engine:
                     )))
             return self._json({"ok": True, "filename": "results_%s.csv" % stamp,
                                "mime": "text/csv", "content": "\r\n".join(lines)})
+
+        if kind == "neural":
+            try:
+                content = self.predictor.nn.export_snapshot()
+            except Exception as exc:
+                return self._json({"ok": False,
+                                   "error": "Экспорт нейросети: %s" % exc})
+            return self._json({"ok": True,
+                               "filename": "neural_%s.json" % stamp,
+                               "mime": "application/json", "content": content})
 
         if kind == "report":
             payload = self.predictor.telegram.stats_payload()
