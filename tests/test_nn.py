@@ -479,6 +479,48 @@ check("экспорт содержит версию разметки",
 check("экспорт содержит исходный счёт строки",
       (snapshot["samples"]["football"][0].get("score") in ("2:0", "0:2")),
       snapshot["samples"]["football"][:1])
+check("экспорт содержит резервные копии", "backups" in snapshot, snapshot.keys())
+lean = json.loads(trainer.export_snapshot(include_backups=False))
+check("выгрузка на сервер без резервных копий", "backups" not in lean,
+      lean.keys())
+check("выгрузка на сервер сохраняет выборку",
+      len(lean["samples"].get("football") or []) == 80,
+      {k: len(v) for k, v in (lean.get("samples") or {}).items()})
+
+_orig_upload = nn_trainer.online_client.upload_nn
+_upload_calls = {}
+
+
+def _fake_upload(settings, payload, device=""):
+    _upload_calls["payload"] = payload
+    _upload_calls["device"] = device
+    return {"ok": True, "saved": "neural_test.json", "bytes": 128,
+            "summary": {"samples_total": 80}}
+
+
+nn_trainer.online_client.upload_nn = _fake_upload
+try:
+    sent = trainer.upload_snapshot(device="device-42")
+finally:
+    nn_trainer.online_client.upload_nn = _orig_upload
+check("выгрузка: отправка выполнена", sent.get("ok") is True, sent)
+check("выгрузка: устройство передано",
+      _upload_calls.get("device") == "device-42", _upload_calls.get("device"))
+check("выгрузка: выборка в теле запроса",
+      len((_upload_calls.get("payload") or {}).get("samples", {})
+          .get("football") or []) == 80, _upload_calls.keys())
+check("выгрузка: резервные копии не отправляются",
+      "backups" not in (_upload_calls.get("payload") or {}),
+      _upload_calls.get("payload", {}).keys())
+
+_orig_upload_method = trainer.upload_snapshot
+trainer.upload_snapshot = lambda device="": {
+    "ok": True, "saved": "neural_test.json", "bytes": 1, "summary": {}}
+try:
+    api_res = json.loads(api.api_neural_upload())
+finally:
+    trainer.upload_snapshot = _orig_upload_method
+check("api выгрузки отвечает ok", api_res.get("ok") is True, api_res)
 res = json.loads(api.api_neural(json.dumps({"action": "train"})))
 check("api обучение ok", res.get("ok") is True, res)
 res = json.loads(api.api_neural(json.dumps({"action": "disable"})))

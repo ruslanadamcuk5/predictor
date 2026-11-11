@@ -657,6 +657,31 @@ function bindNeural() {
       neuralAction(enabled ? 'disable' : 'enable');
     });
   }
+  const upload = $('btnNnUpload');
+  if (upload) {
+    upload.addEventListener('click', () => {
+      if (!bridge || typeof bridge.neuralUpload !== 'function') {
+        toast('Мост приложения недоступен', 'error');
+        return;
+      }
+      loader(true);
+      try {
+        const res = call('neuralUpload');
+        if (res && res.ok) {
+          const s = res.summary || {};
+          const total = num(s.samples_total);
+          toast('Данные отправлены: ' + total + ' примеров, ' +
+                num(s.pending) + ' в очереди', 'ok');
+          if (res.saved) console.log('Выгрузка нейросети:', res.saved);
+        } else {
+          toast('Не удалось отправить: ' +
+                ((res && res.error) || 'нет ответа сайта'), 'error');
+        }
+      } finally {
+        loader(false);
+      }
+    });
+  }
   const train = $('btnNnTrain');
   if (train) train.addEventListener('click', () => neuralAction('train'));
   const reset = $('btnNnReset');
@@ -2717,6 +2742,10 @@ function resetSettings() {
 function exportData(kind) {
   loader(true);
   try {
+    if (bridge && typeof bridge.exportFile === 'function') {
+      bridge.exportFile(kind);
+      return;
+    }
     const res = call('exportData', kind);
     if (!res || !res.ok) {
       toast('Не удалось подготовить файл', 'error');

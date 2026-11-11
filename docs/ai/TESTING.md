@@ -274,7 +274,7 @@ C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.24.apk
 
 Ожидается:
 
-- `versionCode 26`, `versionName 1.25`;
+- `versionCode 27`, `versionName 1.26`;
 - package `by.betcity.predictor`;
 - minSdk 24, targetSdk 34;
 - `arm64-v8a`, `x86_64`;

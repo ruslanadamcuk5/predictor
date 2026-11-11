@@ -23,6 +23,7 @@ import time
 from datetime import datetime
 
 import nn_core
+import online_client
 import sports
 
 SAMPLES_FILE = "nn_samples.jsonl"
@@ -1124,7 +1125,7 @@ class NeuralTrainer:
         return rows
 
     # ---------------------------------------------------------------- экспорт
-    def export_snapshot(self):
+    def export_snapshot(self, include_backups=True):
         """Полная выгрузка нейросети: выборка, очередь, архив и модели.
 
         Нужна, чтобы изучить реальные собранные данные на устройстве:
@@ -1156,10 +1157,26 @@ class NeuralTrainer:
                 "pending": list(self._pending),
                 "archive": archived,
                 "models": dict(self._models),
-                "backups": dict(self._backups),
                 "quarantined": dict(self._quarantined),
             }
+            if include_backups:
+                payload["backups"] = dict(self._backups)
         return json.dumps(payload, ensure_ascii=False, indent=1)
+
+    def upload_snapshot(self, device=""):
+        """Отправляет снимок выборки на сайт — без файлового диалога.
+
+        Большой JSON не проходит через мост WebView и системный
+        «Сохранить как», поэтому выгрузка уходит напрямую в сеть.
+        Резервные копии моделей в снимок не входят: для разбора данных
+        достаточно выборки, очереди, архива и самих моделей.
+        """
+        payload = json.loads(self.export_snapshot(include_backups=False))
+        result = online_client.upload_nn(
+            self.settings.snapshot(), payload, device=device)
+        self._log("Нейросеть: выгрузка на сервер — %s (%s байт)" % (
+            result.get("saved") or "?", result.get("bytes") or 0))
+        return result
 
     # ---------------------------------------------------------------- статус
     def status(self):

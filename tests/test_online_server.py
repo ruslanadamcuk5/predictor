@@ -23,6 +23,9 @@ RELEASES = os.path.join(tempfile.gettempdir(), "predictor-tests",
 shutil.rmtree(RELEASES, ignore_errors=True)
 os.makedirs(RELEASES, exist_ok=True)
 os.environ["PREDICTOR_RELEASES_DIR"] = RELEASES
+NN_DIR = os.path.join(tempfile.gettempdir(), "predictor-tests", "nn_uploads")
+shutil.rmtree(NN_DIR, ignore_errors=True)
+os.environ["PREDICTOR_NN_DIR"] = NN_DIR
 
 import online_app  # noqa: E402
 
@@ -136,6 +139,52 @@ check("неверный метод: 405", status["status"] == 405, status)
 
 status, data = request("GET", "/no-such-page")
 check("неизвестный адрес: 404", status["status"] == 404, status)
+
+# ---------------------------------------------------------------------
+# Выгрузка нейросети: приём снимка, сводка и сохранение на диск
+# ---------------------------------------------------------------------
+nn_payload = {
+    "generated_at": "2026-11-11T05:41:45",
+    "label_version": 3,
+    "device": "device-42",
+    "samples": {"football": [{"v": 3}, {"v": 3}],
+                "volleyball": [{"v": 3}]},
+    "pending": [{"sport": "football"}],
+    "archive": [{"sport": "football"}, {"sport": "tennis"}],
+    "models": {"football": {"meta": {}}, "volleyball": {"meta": {}}},
+}
+status, data = request("POST", "/api/v1/nn/upload", nn_payload,
+                       token="wrong", gzipped=True)
+check("выгрузка нейросети без токена: 401",
+      status["status"] == 401, status)
+
+status, data = request("POST", "/api/v1/nn/upload", nn_payload,
+                       token="test-token", gzipped=True)
+check("выгрузка нейросети: 200", status["status"] == 200, (status, data))
+check("выгрузка нейросети: ok", data.get("ok") is True, data)
+summary = data.get("summary") or {}
+check("выгрузка: примеры по видам",
+      summary.get("samples") == {"football": 2, "volleyball": 1}, summary)
+check("выгрузка: всего примеров", summary.get("samples_total") == 3, summary)
+check("выгрузка: очередь и архив",
+      summary.get("pending") == 1 and summary.get("archive") == 2, summary)
+check("выгрузка: модели", summary.get("models") == ["football", "volleyball"],
+      summary)
+check("выгрузка: версия разметки", summary.get("label_version") == 3, summary)
+saved_name = data.get("saved") or ""
+saved_path = os.path.join(NN_DIR, saved_name)
+check("выгрузка: файл сохранён", bool(saved_name) and os.path.isfile(saved_path),
+      saved_path)
+check("выгрузка: latest.json обновлён",
+      os.path.isfile(os.path.join(NN_DIR, "latest.json")), NN_DIR)
+with open(saved_path, "r", encoding="utf-8") as handle:
+    stored = json.load(handle)
+check("выгрузка: данные не потеряны",
+      stored.get("samples") == nn_payload["samples"], stored.get("samples"))
+
+status, data = request("POST", "/api/v1/nn/upload", {"foo": 1},
+                       token="test-token")
+check("выгрузка без выборки: 400", status["status"] == 400, status)
 
 # =====================================================================
 # Обновление APK: манифест, HEAD, Range, защита путей

@@ -128,6 +128,20 @@ def _request(method, cfg, path, payload=None, timeout=None):
     return data
 
 
+def upload_nn(settings_snapshot, payload, device=""):
+    """Отправляет снимок нейросети на сайт.
+
+    Телефон не пытается сохранить многомегабайтный JSON через системный
+    диалог: снимок уходит по сети целиком (при необходимости в gzip), а
+    сервер складывает его в отдельный каталог.
+    """
+    cfg = config(settings_snapshot)
+    body = dict(payload or {})
+    if device:
+        body["device"] = str(device)
+    return _request("POST", cfg, "/api/v1/nn/upload", body, timeout=180)
+
+
 def ping(settings_snapshot, overrides=None):
     cfg = config(settings_snapshot, overrides)
     if not cfg.get("base_url"):

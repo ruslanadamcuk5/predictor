@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import traceback
@@ -22,8 +23,11 @@ from datetime import datetime
 from email.utils import formatdate
 from urllib.parse import parse_qs, unquote
 
-SERVER_VERSION = "1.25.0"
+SERVER_VERSION = "1.26.0"
 MAX_BODY = 12 * 1024 * 1024
+# Выгрузка нейросети содержит всю выборку, очередь и архив — она заметно
+# больше обычного запроса анализа, поэтому для неё отдельный предел.
+MAX_NN_BODY = 64 * 1024 * 1024
 MAX_PREDICTIONS = 8000
 CHUNK_SIZE = 256 * 1024
 
@@ -53,6 +57,11 @@ RELEASES_DIR = os.path.abspath(
     or os.path.join(HERE, "releases"))
 RELEASES_PREFIX = "/releases/"
 APK_CONTENT_TYPE = "application/vnd.android.package-archive"
+# Куда складывать выгрузки нейросети с телефона. Данные не удаляются:
+# каждый файл остаётся на диске, а latest.json — копия последней выгрузки.
+NN_DIR = os.path.abspath(
+    os.environ.get("PREDICTOR_NN_DIR")
+    or os.path.join(history_store.DATA_DIR, "nn_uploads"))
 _SHA256_CACHE = {}
 
 
@@ -157,14 +166,15 @@ def _check_auth(environ):
         raise HttpError(401, "Неверный или отсутствующий токен доступа.")
 
 
-def _read_body(environ):
+def _read_body(environ, limit=None):
+    limit = int(limit or MAX_BODY)
     try:
         length = int(environ.get("CONTENT_LENGTH") or 0)
     except Exception:
         length = 0
-    if length > MAX_BODY:
+    if length > limit:
         raise HttpError(413, "Слишком большой запрос: максимум %d МБ." %
-                        (MAX_BODY // (1024 * 1024)))
+                        (limit // (1024 * 1024)))
     stream = environ.get("wsgi.input")
     raw = stream.read(length) if (stream is not None and length) else b""
     if not raw:
@@ -175,7 +185,7 @@ def _read_body(environ):
             raw = gzip.decompress(raw)
         except Exception as exc:
             raise HttpError(400, "Не удалось распаковать gzip: %s" % exc)
-        if len(raw) > MAX_BODY:
+        if len(raw) > limit:
             raise HttpError(413, "Слишком большой запрос после распаковки.")
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -211,6 +221,57 @@ def _options_from(data):
         "limit": data.get("limit") or 0,
         "pairs": data.get("pairs", True),
     }
+
+
+def _nn_counts(value):
+    result = {}
+    if not isinstance(value, dict):
+        return result
+    for sport, rows in value.items():
+        if isinstance(rows, list):
+            result[str(sport)] = len(rows)
+    return result
+
+
+def _save_nn_upload(data, environ):
+    """Сохраняет снимок нейросети на диск и возвращает сводку.
+
+    Ничего не перезаписывается: каждый снимок получает своё имя по времени
+    и устройству. latest.json — просто копия последнего для удобства.
+    """
+    os.makedirs(NN_DIR, exist_ok=True)
+    device = str(data.get("device") or
+                 _header(environ, "X-Predictor-Device") or "")
+    safe = re.sub(r"[^0-9A-Za-z_.-]+", "_", device).strip("._")[:48]
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    name = "neural_%s%s.json" % (stamp, ("_" + safe) if safe else "")
+    raw = json.dumps(data, ensure_ascii=False, indent=1)
+    path = os.path.join(NN_DIR, name)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(raw)
+    os.replace(tmp, path)
+    try:
+        latest = os.path.join(NN_DIR, "latest.json")
+        shutil.copyfile(path, latest + ".tmp")
+        os.replace(latest + ".tmp", latest)
+    except Exception:
+        pass
+    samples = _nn_counts(data.get("samples"))
+    pending = data.get("pending")
+    archive = data.get("archive")
+    models = data.get("models")
+    summary = {
+        "samples": samples,
+        "samples_total": sum(samples.values()),
+        "pending": len(pending) if isinstance(pending, list) else 0,
+        "archive": len(archive) if isinstance(archive, list) else 0,
+        "models": sorted(models.keys()) if isinstance(models, dict) else [],
+        "label_version": data.get("label_version"),
+        "generated_at": data.get("generated_at"),
+    }
+    return {"ok": True, "saved": name,
+            "bytes": len(raw.encode("utf-8")), "summary": summary}
 
 
 def analyze(data):
@@ -621,6 +682,16 @@ class Application(object):
                     raise HttpError(404, "Устройство не найдено.")
                 return _json_response(start_response, data,
                                       head=(method == "HEAD"))
+            if path == "/api/v1/nn/upload":
+                if method != "POST":
+                    raise HttpError(405, "Метод не поддерживается.")
+                _check_auth(environ)
+                data = _read_body(environ, limit=MAX_NN_BODY)
+                if not isinstance(data.get("samples"), dict):
+                    raise HttpError(400, "Ожидался снимок нейросети "
+                                         "(поле samples).")
+                return _json_response(
+                    start_response, _save_nn_upload(data, environ))
             if path == "/api/v1/update":
                 if method not in ("GET", "HEAD"):
                     raise HttpError(405, "Метод не поддерживается.")

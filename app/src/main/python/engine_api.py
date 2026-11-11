@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.25.0"
+APP_VERSION = "1.26.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -2145,6 +2145,22 @@ def api_neural(payload=None):
     return engine().neural(payload)
 
 
+def api_neural_upload(payload=None):
+    """Выгрузка снимка нейросети на сайт (кнопка «Отправить данные»)."""
+    eng = engine()
+    try:
+        info = eng._device_info()
+    except Exception:
+        info = {}
+    try:
+        result = eng.predictor.nn.upload_snapshot(
+            device=str((info or {}).get("id") or ""))
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)},
+                          ensure_ascii=False)
+
+
 def api_ai(payload=None):
     return engine().ai(payload)
 
@@ -2167,6 +2183,41 @@ def api_test_connection():
 
 def api_export(kind="stats"):
     return engine().export_data(kind)
+
+
+def api_export_file(kind, directory):
+    """Готовит выгрузку и пишет её в файл на устройстве.
+
+    Так большой JSON не проходит через мост WebView: Python сам пишет
+    файл в кэш, а Android только копирует его в выбранное место.
+    """
+    try:
+        data = json.loads(engine().export_data(kind))
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)},
+                          ensure_ascii=False)
+    if not data.get("ok"):
+        return json.dumps(data, ensure_ascii=False)
+    content = data.get("content") or ""
+    if not content.strip():
+        return json.dumps({"ok": False, "error": "Нет данных для экспорта"},
+                          ensure_ascii=False)
+    name = data.get("filename") or "export.txt"
+    try:
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)},
+                          ensure_ascii=False)
+    return json.dumps({
+        "ok": True,
+        "path": path,
+        "filename": name,
+        "mime": data.get("mime") or "application/octet-stream",
+        "bytes": len(content.encode("utf-8")),
+    }, ensure_ascii=False)
 
 
 def api_clear_data(what="all"):

@@ -25,8 +25,6 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var updateManager: UpdateManager
-    private var pendingSaveName: String? = null
-    private var pendingSaveContent: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -268,6 +266,37 @@ class MainActivity : Activity() {
         fun exportData(kind: String): String = call("api_export", kind)
 
         @JavascriptInterface
+        fun neuralUpload(): String = call("api_neural_upload")
+
+        /**
+         * Готовит выгрузку в кэше силами Python и открывает диалог
+         * «Сохранить как». Через мост WebView передаётся только путь:
+         * многомегабайтный JSON в строке моста обрезался, и файл
+         * получался пустым.
+         */
+        @JavascriptInterface
+        fun exportFile(kind: String) {
+            runOnUiThread {
+                try {
+                    val dir = File(cacheDir, "exports").apply { mkdirs() }
+                    val data = org.json.JSONObject(
+                        call("api_export_file", kind, dir.absolutePath))
+                    if (!data.optBoolean("ok")) {
+                        toast("Не удалось: " + data.optString(
+                            "error", "нет данных для экспорта"))
+                        return@runOnUiThread
+                    }
+                    val name = data.optString("filename", "export.txt")
+                    val mime = data.optString(
+                        "mime", "application/octet-stream")
+                    startSaveDialog(File(data.getString("path")), name, mime)
+                } catch (t: Throwable) {
+                    toast("Не удалось сохранить: ${t.message}")
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun clearData(what: String): String = call("api_clear_data", what)
 
         @JavascriptInterface
@@ -297,15 +326,10 @@ class MainActivity : Activity() {
         fun saveFile(name: String, mime: String, content: String) {
             runOnUiThread {
                 try {
-                    pendingSaveName = name
-                    pendingSaveContent = content
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = mime
-                        putExtra(Intent.EXTRA_TITLE, name)
-                    }
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(intent, REQUEST_SAVE)
+                    val dir = File(cacheDir, "exports").apply { mkdirs() }
+                    val file = File(dir, name)
+                    file.writeText(content)
+                    startSaveDialog(file, name, mime)
                 } catch (t: Throwable) {
                     toast("Не удалось сохранить: ${t.message}")
                 }
@@ -367,26 +391,51 @@ class MainActivity : Activity() {
         fun updateInstall(path: String): String = updateManager.install(path)
     }
 
+    private fun exportPrefs() = getSharedPreferences("predictor_exports", MODE_PRIVATE)
+
+    private fun startSaveDialog(file: File, name: String, mime: String) {
+        exportPrefs().edit()
+            .putString("path", file.absolutePath)
+            .putString("name", name)
+            .apply()
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mime
+            putExtra(Intent.EXTRA_TITLE, name)
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, REQUEST_SAVE)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_SAVE) return
+        val prefs = exportPrefs()
+        val path = prefs.getString("path", null)
+        val name = prefs.getString("name", null)
         if (resultCode != RESULT_OK) {
-            pendingSaveName = null
-            pendingSaveContent = null
+            prefs.edit().clear().apply()
             return
         }
         val uri: Uri = data?.data ?: return
-        val content = pendingSaveContent ?: return
+        val file = path?.let { File(it) }
+        if (file == null || !file.isFile) {
+            toast("Файл выгрузки не найден")
+            prefs.edit().clear().apply()
+            return
+        }
         try {
-            contentResolver.openOutputStream(uri)?.use { stream ->
-                stream.write(content.toByteArray(Charsets.UTF_8))
+            file.inputStream().use { input ->
+                val output = contentResolver.openOutputStream(uri)
+                    ?: throw IllegalStateException(
+                        "нет доступа к выбранному месту")
+                output.use { input.copyTo(it) }
             }
-            toast("Сохранено: ${pendingSaveName ?: "файл"}")
+            toast("Сохранено: ${name ?: file.name}")
         } catch (t: Throwable) {
             toast("Ошибка записи: ${t.message}")
         } finally {
-            pendingSaveName = null
-            pendingSaveContent = null
+            prefs.edit().clear().apply()
         }
     }
 

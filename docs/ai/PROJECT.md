@@ -102,34 +102,35 @@ Live-линия всех видов: команды, счёт, коэффици�
 
 | Параметр | Значение |
 |---|---|
-| Версия | 1.25 |
-| `versionCode` | 26 |
-| `APP_VERSION` | 1.25.0 |
-| `SERVER_VERSION` | 1.25.0 |
-| APK | `../Predictor-1.25.apk` |
+| Версия | 1.26 |
+| `versionCode` | 27 |
+| `APP_VERSION` | 1.26.0 |
+| `SERVER_VERSION` | 1.26.0 |
+| APK | `../Predictor-1.26.apk` |
 | minSdk | 24 (Android 7.0) |
 | targetSdk | 34 |
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
-| Размер APK | 39 486 033 байт (37,7 МБ) |
-| SHA-256 | `f22b4b67e76bf0de9b6010ee0b0b1b345c5d5c785f96ca69dbd9da3d7173223d` |
+| Размер APK | 38 970 602 байт (37,2 МБ) |
+| SHA-256 | `3427cc3dd36e479e97239d0d48c18db9f6f7179d2feea45bcaa5b4dad83cd277` |
 
-Состояние на 11.11.2026: офлайн-регрессии (24 набора), `test_engine_core.py`
+Состояние на 11.11.2026: офлайн-регрессии (26 наборов), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
 `test_recommendations.py` (85), `test_ai.py` (92), `test_ui_settings.py` (14),
-`test_history_server.py` (85), `test_online_server.py` (67),
-`test_release_tool.py` (20), `test_live_tool.py` (6), `test_nn.py` (144),
+`test_history_server.py` (85), `test_online_server.py` (79),
+`test_release_tool.py` (20), `test_live_tool.py` (6), `test_nn.py` (152),
 `test_nn_params.py` (35) и `test_score_results.py` (47) проходят.
-APK 1.25 собран (Chaquopy 17.1.0,
+APK 1.26 собран (Chaquopy 17.1.0,
 Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,
 и проверен `aapt2`/`apksigner`. Онлайн-сервис развёрнут на
 `https://predictor.alwaysdata.net` (аккаунт `predictor`, сайт PHP/static +
 CGI-адаптер `server/cgi_adapter.py`). Проверены ping, манифест обновления,
-скачивание APK с `Range`, POST `/api/v1/analyze` (обычный и gzip), паритет
-отчёта с локальным `build_report`, `POST /api/v1/sync` и все разделы
-веб-кабинета. Чужой сайт `virusadk.alwaysdata.net` не используется.
+скачивание APK с `Range`, POST `/api/v1/analyze` (обычный и gzip),
+`POST /api/v1/nn/upload`, паритет отчёта с локальным `build_report`,
+`POST /api/v1/sync` и все разделы веб-кабинета. Чужой сайт
+`virusadk.alwaysdata.net` не используется.
 Осталось проверить установку на физическом устройстве и автообновление
-поверх 1.21: нужны реальная линия Betcity и ключ ИИ.
+поверх 1.25: нужны реальная линия Betcity и ключ ИИ.
 
 ## 5. Границы проекта
 
