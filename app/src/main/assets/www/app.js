@@ -503,6 +503,31 @@ function bindNnMarkets() {
   });
 }
 
+function nnMarketReport(item) {
+  const report = Array.isArray(item.market_report) ? item.market_report : [];
+  if (!report.length) return '';
+  const readyCount = report.filter(row => row.ready).length;
+  const sourceLabel = row => row.source === 'specialist'
+    ? ' · отдельная модель'
+    : (row.source === 'winner' ? '' : ' · голова сети');
+  const lines = report.map(row => {
+    const accuracy = Math.round((row.accuracy || 0) * 100);
+    const baseline = Math.round((row.baseline || 0) * 100);
+    const lift = (row.lift || 0) * 100;
+    const val = num(row.samples);
+    return `<div class="nn-market-line${row.ready ? ' ok' : ''}">
+      <span class="nn-market-line-name">${esc(row.label || row.kind || '')}</span>
+      <span class="nn-market-line-num">${accuracy}% / база ${baseline}%</span>
+      <span class="nn-market-line-lift">${lift >= 0 ? '+' : ''}${lift.toFixed(1)} п.п.</span>
+      <span class="nn-market-line-reason">${esc(row.reason || '')}${sourceLabel(row)}${val ? ` · проверка ${val}` : ''}</span>
+    </div>`;
+  }).join('');
+  return `<details class="nn-market-report">
+    <summary>Почему рынки так · готово ${readyCount} из ${report.length}</summary>
+    ${lines}
+  </details>`;
+}
+
 function renderNeural(status) {
   const badge = $('nnBadge');
   if (!badge) return;
@@ -620,6 +645,7 @@ function renderNeural(status) {
         </div>
         <div class="nn-sport-meta">${esc(meta)}${marks.length ? '<div class="nn-sport-marks">' + marks.join('') + '</div>' : ''}
           ${item.hint ? `<div class="field-hint">${esc(item.hint)}</div>` : ''}</div>
+        ${nnMarketReport(item)}
       </div>`;
     }).join('');
     list.innerHTML = rows || '<div class="empty">Нет данных</div>';

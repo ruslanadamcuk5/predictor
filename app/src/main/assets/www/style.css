@@ -771,8 +771,31 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--line); border-radius: 12px;
   padding: 9px 11px; background: var(--card-2);
   display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; font-size: 12.5px;
+  gap: 10px; font-size: 12.5px; flex-wrap: wrap;
 }
+.nn-market-report {
+  flex: 1 0 100%; margin-top: 2px; padding-top: 7px;
+  border-top: 1px dashed var(--line);
+}
+.nn-market-report summary {
+  cursor: pointer; color: var(--muted); font-size: 11.5px;
+  list-style-position: inside;
+}
+.nn-market-report summary:hover { color: var(--text); }
+.nn-market-line {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 5px 0 4px 14px; border-bottom: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted);
+}
+.nn-market-line:last-child { border-bottom: none; padding-bottom: 0; }
+.nn-market-line-name { color: var(--text); font-weight: 600; min-width: 86px; }
+.nn-market-line.ok .nn-market-line-name::before {
+  content: "✓ "; color: var(--ok);
+}
+.nn-market-line-num { font-variant-numeric: tabular-nums; color: var(--text); }
+.nn-market-line-lift { font-variant-numeric: tabular-nums; }
+.nn-market-line.ok .nn-market-line-lift { color: var(--ok); }
+.nn-market-line-reason { flex: 1 0 100%; padding-left: 0; }
 .nn-sport-name { color: var(--text); font-weight: 600; }
 .nn-sport-meta { color: var(--muted); font-size: 11.5px; text-align: right; }
 .nn-sport-bar {

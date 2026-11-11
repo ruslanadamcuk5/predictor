@@ -112,10 +112,11 @@ MARKET_LABELS = {
 # вслепую, а сохраняем в архиве.
 LABEL_VERSION = 3
 
-# Ревизия обучения. 1.28 добавила производные признаки и отдельную
-# линейную модель на каждую голову, поэтому старые веса несовместимы:
-# модель без этой ревизии переобучается один раз.
-TRAIN_REVISION = 2
+# Ревизия обучения. 1.29 добавила отдельные модели рынков (тотал, фора,
+# обе забьют) и диагностику по рынкам, поэтому старые модели нужно один
+# раз переобучить: у них ещё нет проверки специалистов на отложенных
+# матчах.
+TRAIN_REVISION = 3
 
 # Версия вектора признаков. 1 — «сырые» метрики конструктора, 2 — они же
 # плюс производные разности (линия тотала, фора, форма, коэффициенты).
@@ -147,6 +148,24 @@ TEMPERATURE_RANGE = (0.35, 5.0)
 # достаточно не ошибаться на этом классе.
 MARKET_DEGENERATE_BASELINE = 0.9
 
+# Рынки, для которых можно обучать отдельную модель. Победитель сюда не
+# входит: его голова — основа текущей сети, и её нельзя менять незаметно.
+SPECIALIST_HEADS = {"total": "over", "handicap": "handicap",
+                    "btts": "btts"}
+# Минимум проверочных исходов у отдельной модели рынка: на двух-трёх
+# матчах «перевес» — это случайность.
+SPECIALIST_MIN_VAL_SAMPLES = 8
+
+
+def required_lift(meta):
+    """Какой перевес над базой нужен рынку с такой долей старой разметки."""
+    try:
+        risk = float((meta or {}).get("legacy_risk") or 0.0)
+    except (TypeError, ValueError):
+        risk = 0.0
+    risk = min(1.0, max(0.0, risk))
+    return MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * risk
+
 
 def head_ready(meta, head):
     """Готова ли голова рынка к прогнозам по своей выборке.
@@ -176,9 +195,7 @@ def head_ready(meta, head):
     try:
         accuracy = float(accuracy)
         baseline = float(baseline)
-        risk = float(meta.get("legacy_risk") or 0.0)
-        risk = min(1.0, max(0.0, risk))
-        required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * risk
+        required = required_lift(meta)
         if baseline >= MARKET_DEGENERATE_BASELINE:
             return accuracy >= baseline - MARKET_MIN_LIFT
         return accuracy >= baseline + required
@@ -961,6 +978,43 @@ def _apply_linear(model, z, values):
     return values
 
 
+def market_specialist(model, head):
+    """Отдельная модель рынка для головы, если она готова.
+
+    Победитель сюда не входит: его вероятности считает основная сеть.
+    Специалист обучен только на строках своего рынка и включается, лишь
+    когда на отложенных матчах доказал перевес над базой.
+    """
+    for kind, data in ((model or {}).get("market_models") or {}).items():
+        if SPECIALIST_HEADS.get(kind) != head:
+            continue
+        if (data or {}).get("meta", {}).get("ready"):
+            return data
+    return None
+
+
+def _apply_specialists(model, z, values):
+    """Подменяет логиты рынков их отдельными моделями."""
+    for kind, head in SPECIALIST_HEADS.items():
+        data = market_specialist(model, head)
+        if not data:
+            continue
+        values[head] = LinearHead.load(data.get("head_state") or {}).logit(z)
+    return values
+
+
+def _market_temperature(model, head):
+    """Температура головы: у отдельной модели рынка своя калибровка."""
+    data = market_specialist(model, head)
+    if data:
+        try:
+            value = float(data.get("temperature") or 1.0)
+        except (TypeError, ValueError):
+            value = 1.0
+        return value if value > 0.0 else 1.0
+    return _head_temperature(model, head)
+
+
 def _model_logits_rows(model, rows):
     """Логиты всех голов для строк выборки (сеть загружается один раз)."""
     net = MLP.load(model or {})
@@ -973,7 +1027,8 @@ def _model_logits_rows(model, rows):
         logits = net.logits(z)
         values = {head: logits[i] for i, head in enumerate(heads)
                   if i < len(logits)}
-        out.append(_apply_linear(model, z, values))
+        values = _apply_linear(model, z, values)
+        out.append(_apply_specialists(model, z, values))
     return out
 
 
@@ -1109,7 +1164,7 @@ def evaluate_hybrid(model, rows, heads):
     for row, values in zip(rows, logits_rows):
         probs = {}
         for head, value in values.items():
-            temperature = _head_temperature(model, head)
+            temperature = _market_temperature(model, head)
             probs[head] = sigmoid(value / temperature)
         samples.append((probs, row.get("y") or [], row.get("m") or []))
     return _metrics_from_probs(samples, heads)
@@ -1199,6 +1254,76 @@ def fit_head_temperatures(model, rows, heads, steps=48):
     return global_temperature, scales, losses
 
 
+def _fit_market_specialist(sport, kind, head, train_rows, val_rows,
+                           train_x, val_x, heads, legacy_risk):
+    """Обучает отдельную модель одного рынка.
+
+    Основная сеть учит все головы сразу, поэтому редкий рынок может
+    «потеряться» за сильным победителем. Здесь модель видит только строки
+    своего рынка, сама выбирает признаки и включается, только если на
+    отложенных матчах обошла базу на требуемый перевес. Победитель в эту
+    функцию не попадает.
+    """
+    if head not in heads:
+        return None
+    index = heads.index(head)
+    train_index = [i for i, row in enumerate(train_rows)
+                   if index < len(row.get("m") or [])
+                   and float(row["m"][index]) > 0]
+    val_index = [i for i, row in enumerate(val_rows)
+                 if index < len(row.get("m") or [])
+                 and float(row["m"][index]) > 0]
+    if len(train_index) < MARKET_MIN_TRAIN_SAMPLES:
+        return None
+    if len(val_index) < SPECIALIST_MIN_VAL_SAMPLES:
+        return None
+    Xtr = [train_x[i] for i in train_index]
+    ytr = [1.0 if float(train_rows[i]["y"][index]) >= 0.5 else 0.0
+           for i in train_index]
+    wtr = [_row_weight(sport, _row_version(train_rows[i]))
+           for i in train_index]
+    Xva = [val_x[i] for i in val_index]
+    yva = [1.0 if float(val_rows[i]["y"][index]) >= 0.5 else 0.0
+           for i in val_index]
+    linear, logloss = _fit_linear_head(Xtr, ytr, wtr, Xva, yva)
+    probs = [sigmoid(linear.logit(row)) for row in Xva]
+    correct = sum(1 for prob, target in zip(probs, yva)
+                  if (prob >= 0.5) == (target >= 0.5))
+    accuracy = correct / float(len(yva)) if yva else 0.0
+    positives = sum(1 for target in yva if target >= 0.5)
+    baseline = max(positives, len(yva) - positives) / float(len(yva)) \
+        if yva else 0.0
+    temperature, calibration_loss = _best_temperature(
+        [(target, linear.logit(row)) for row, target in zip(Xva, yva)])
+    required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * min(
+        1.0, max(0.0, float(legacy_risk or 0.0)))
+    if baseline >= MARKET_DEGENERATE_BASELINE:
+        ready = accuracy >= baseline - MARKET_MIN_LIFT
+    else:
+        ready = accuracy >= baseline + required
+    return {
+        "kind": kind,
+        "head": head,
+        "source": "linear",
+        "head_state": linear.state(),
+        "temperature": temperature,
+        "meta": {
+            "samples": len(train_index),
+            "val_samples": len(val_index),
+            "accuracy": accuracy,
+            "baseline": baseline,
+            "lift": accuracy - baseline,
+            "required_lift": required,
+            "ready": bool(ready),
+            "source": "linear",
+            "logloss": logloss,
+            "calibration_loss": calibration_loss,
+            "feature_version": FEATURE_VERSION,
+            "label_version": LABEL_VERSION,
+        },
+    }
+
+
 def winner_ready(meta):
     """Готов ли рынок победителя как одно совместное решение.
 
@@ -1238,27 +1363,123 @@ def winner_ready(meta):
     try:
         accuracy = float(accuracy)
         baseline = float(baseline)
-        risk = min(1.0, max(0.0, float(meta.get("legacy_risk") or 0.0)))
     except (TypeError, ValueError):
         return False
-    required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * risk
+    required = required_lift(meta)
     if baseline >= MARKET_DEGENERATE_BASELINE:
         return accuracy >= baseline - MARKET_MIN_LIFT
     return accuracy >= baseline + required
 
 
 def ready_markets(meta, sport):
-    """Какие рынки вида спорта можно показывать по этой модели."""
+    """Какие рынки вида спорта можно показывать по этой модели.
+
+    Если у рынка есть отдельная модель, её слово главное: она обучена
+    только на своих строках и проверена на своих отложенных матчах.
+    Старая логика голов остаётся запасным вариантом для моделей без
+    специалистов (в том числе уже сохранённых на устройстве).
+    """
     meta = meta or {}
+    specialists = meta.get("market_models") or {}
     ready = {}
     for kind in market_kinds(sport):
         if kind == "winner":
             ready[kind] = winner_ready(meta)
-        else:
-            head = {"total": "over", "handicap": "handicap",
-                    "btts": "btts"}.get(kind)
-            ready[kind] = bool(head) and head_ready(meta, head)
+            continue
+        if kind in specialists:
+            ready[kind] = bool((specialists.get(kind) or {}).get("ready"))
+            continue
+        head = SPECIALIST_HEADS.get(kind)
+        ready[kind] = bool(head) and head_ready(meta, head)
     return ready
+
+
+def _market_reason(kind, is_ready, accuracy, baseline, samples,
+                   train_samples, required):
+    """Короткое объяснение, почему рынок даёт прогноз или молчит."""
+    if kind == "winner":
+        if is_ready:
+            return "точность %.1f%% при базе %.1f%%" % (
+                accuracy * 100.0, baseline * 100.0)
+        if samples <= 0:
+            return "пока нет проверенных матчей"
+        return "точность %.1f%% при базе %.1f%% — нужен перевес +%.1f п.п." % (
+            accuracy * 100.0, baseline * 100.0, required * 100.0)
+    if train_samples < MARKET_MIN_TRAIN_SAMPLES:
+        return "мало размеченных матчей: %d из %d" % (
+            train_samples, MARKET_MIN_TRAIN_SAMPLES)
+    if samples <= 0:
+        return "нет проверки на отложенных матчах"
+    lift = accuracy - baseline
+    if is_ready:
+        return "перевес %+.1f п.п. над базой %.1f%%" % (
+            lift * 100.0, baseline * 100.0)
+    if baseline >= MARKET_DEGENERATE_BASELINE:
+        return "исход почти всегда один (база %.1f%%)" % (baseline * 100.0)
+    if accuracy < baseline:
+        return "точность %.1f%% ниже базы %.1f%%" % (
+            accuracy * 100.0, baseline * 100.0)
+    return "перевес %+.1f п.п., нужен +%.1f п.п." % (
+        lift * 100.0, required * 100.0)
+
+
+def market_report(meta, sport):
+    """Диагностика по каждому рынку вида спорта.
+
+    Возвращает список словарей: точность, база, перевес, требуемый перевес
+    и причина, по которой рынок молчит. Нужна и в приложении, и в тестах,
+    чтобы «тотал не показывается» было объяснимо, а не загадочно.
+    """
+    meta = meta or {}
+    sport = sports.normalize_sport(sport)
+    specialists = meta.get("market_models") or {}
+    ready = ready_markets(meta, sport)
+    head_train = meta.get("head_train_samples") or {}
+    head_accuracy = meta.get("head_accuracy") or {}
+    head_baseline = meta.get("head_baseline") or {}
+    head_samples = meta.get("head_samples") or {}
+    report = []
+    for kind in market_kinds(sport):
+        head = SPECIALIST_HEADS.get(kind)
+        data = specialists.get(kind) or {}
+        # В meta модели лежат краткие сведения о специалисте, а не его
+        # веса; полная запись (если её передали) завёрнута в "meta".
+        info = data.get("meta") if isinstance(data.get("meta"), dict) else data
+        if kind == "winner":
+            source = "winner"
+            accuracy = float(meta.get("winner_accuracy") or 0.0)
+            baseline = float(meta.get("winner_baseline") or 0.0)
+            samples = int(meta.get("winner_samples") or 0)
+            train_samples = int(meta.get("train_samples") or 0)
+        elif data:
+            source = "specialist"
+            accuracy = float(info.get("accuracy") or 0.0)
+            baseline = float(info.get("baseline") or 0.0)
+            samples = int(info.get("val_samples") or 0)
+            train_samples = int(info.get("samples") or 0)
+        else:
+            source = "head"
+            accuracy = float(head_accuracy.get(head) or 0.0)
+            baseline = float(head_baseline.get(head) or 0.0)
+            samples = int(head_samples.get(head) or 0)
+            train_samples = int(head_train.get(head) or 0)
+        required = required_lift(meta)
+        is_ready = bool(ready.get(kind))
+        report.append({
+            "kind": kind,
+            "label": MARKET_LABELS.get(kind, kind),
+            "ready": is_ready,
+            "source": source,
+            "accuracy": accuracy,
+            "baseline": baseline,
+            "lift": accuracy - baseline,
+            "samples": samples,
+            "train_samples": train_samples,
+            "required_lift": required,
+            "reason": _market_reason(kind, is_ready, accuracy, baseline,
+                                     samples, train_samples, required),
+        })
+    return report
 
 
 def market_summary(metrics, ready, allow_degenerate=False):
@@ -1589,15 +1810,41 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
     state["temperature"] = temperature
     state["head_temperature"] = head_temperature
     metrics = evaluate_hybrid(state, val_rows, heads)
-    ready = ready_markets({
+    base_meta = {
         "head_train_samples": head_train_samples,
         "head_accuracy": metrics.get("head_accuracy") or {},
         "head_baseline": metrics.get("head_baseline") or {},
+        "head_samples": metrics.get("head_samples") or {},
         "legacy_risk": legacy_risk,
         "winner_accuracy": metrics.get("winner_accuracy"),
         "winner_baseline": metrics.get("winner_baseline"),
         "winner_samples": metrics.get("winner_samples"),
-    }, sport)
+    }
+    ready = ready_markets(base_meta, sport)
+    # Отдельная модель на каждый неготовый рынок. Победитель сюда не
+    # входит: его вероятности по-прежнему считает основная сеть, поэтому
+    # добавление специалистов не может ухудшить текущую точность исхода.
+    market_models = {}
+    for kind, head in SPECIALIST_HEADS.items():
+        if kind not in market_kinds(sport) or ready.get(kind):
+            continue
+        specialist = _fit_market_specialist(
+            sport, kind, head, train_rows, val_rows, train_x, val_x,
+            heads, legacy_risk)
+        if specialist:
+            market_models[kind] = specialist
+    if market_models:
+        state["market_models"] = market_models
+        # Специалисты изменили вероятности своих рынков: метрики и
+        # готовность пересчитываются на той же отложенной выборке.
+        metrics = evaluate_hybrid(state, val_rows, heads)
+        base_meta["head_accuracy"] = metrics.get("head_accuracy") or {}
+        base_meta["head_baseline"] = metrics.get("head_baseline") or {}
+        base_meta["head_samples"] = metrics.get("head_samples") or {}
+        base_meta["market_models"] = {
+            kind: (data.get("meta") or {})
+            for kind, data in market_models.items()}
+        ready = ready_markets(base_meta, sport)
     accuracy, baseline, decisions = market_summary(metrics, ready)
     accuracy_all, baseline_all, decisions_all = market_summary(
         metrics, {kind: True for kind in market_kinds(sport)})
@@ -1653,7 +1900,13 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
         "validation_share": validation_share,
         "seed": seed,
         "finetuned": bool(reuse),
+        "market_models": {
+            kind: (data.get("meta") or {})
+            for kind, data in (state.get("market_models") or {}).items()},
     }
+    # Диагностика строится по уже собранной meta: так она видит и
+    # специалистов, и запасную логику голов.
+    state["meta"]["market_report"] = market_report(state["meta"], sport)
     return state, {"ok": True, "metrics": metrics, "epochs": epochs,
                    "best_epoch": best_epoch or epochs,
                    "architecture": list(hidden_layers),
@@ -1673,7 +1926,8 @@ def head_logits(model, features):
     heads = model.get("heads") or []
     values = {head: logits[i] for i, head in enumerate(heads)
               if i < len(logits)}
-    return _apply_linear(model, z, values)
+    values = _apply_linear(model, z, values)
+    return _apply_specialists(model, z, values)
 
 
 def predict_probs(model, features):
@@ -1681,6 +1935,6 @@ def predict_probs(model, features):
     values = head_logits(model, features)
     probs = {}
     for head, value in values.items():
-        temperature = _head_temperature(model, head)
+        temperature = _market_temperature(model, head)
         probs[head] = sigmoid(value / temperature)
     return probs

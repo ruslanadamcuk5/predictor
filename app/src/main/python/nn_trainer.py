@@ -746,6 +746,27 @@ class NeuralTrainer:
         return float(new_accuracy) >= float(old_accuracy) - IMPROVE_EPS
 
     @classmethod
+    def _keeps_winner(cls, new_meta, old_metrics, keep_best):
+        """Не ухудшает ли новая модель рынок победителя.
+
+        Общая точность после появления отдельных моделей рынков стала
+        другой мерой: новый рынок может открыться и честно снизить
+        среднее, хотя победитель стал лучше. Поэтому при выборе лучшей
+        модели главное — не откатить точность победителя, а общая
+        точность сравнивается только там, где прежней оценки исхода нет.
+        """
+        if not keep_best:
+            return True
+        old_winner = float((old_metrics or {}).get("winner_accuracy") or 0.0)
+        new_winner = float((new_meta or {}).get("winner_accuracy") or 0.0)
+        if old_winner > 0.0:
+            return new_winner >= old_winner - IMPROVE_EPS
+        return cls._is_better(
+            float((new_meta or {}).get("accuracy") or 0.0),
+            float((old_metrics or {}).get("accuracy") or 0.0)
+            if old_metrics else None, keep_best)
+
+    @classmethod
     def _plateau(cls, model):
         """True, если точность не растёт PLATEAU_ROUNDS раундов подряд."""
         history = cls._history(model)
@@ -947,8 +968,8 @@ class NeuralTrainer:
                 }
                 if (old_accuracy is not None and previous and
                         not needs_recoverage and
-                        not self._is_better(new_accuracy, old_accuracy,
-                                            cfg["keep_best"])):
+                        not self._keeps_winner(new_meta, old_metrics,
+                                               cfg["keep_best"])):
                     # Переобучение: оставляем прежнюю модель.
                     entry["rejected"] = True
                     entry["previous_accuracy"] = round(old_accuracy, 4)
@@ -1033,11 +1054,7 @@ class NeuralTrainer:
         уступает «всегда не П2» и не должна закрывать весь рынок.
         """
         meta = (model or {}).get("meta") or {}
-        if kind == "winner":
-            return nn_core.winner_ready(meta)
-        heads = cls._market_heads(sport, kind)
-        return bool(heads) and all(nn_core.head_ready(meta, head)
-                                   for head in heads)
+        return bool(nn_core.ready_markets(meta, sport).get(kind))
 
     def _ready_markets(self, model, sport, markets):
         return {kind: self._market_ready(model, sport, kind)
@@ -1379,6 +1396,7 @@ class NeuralTrainer:
                 "markets_enabled": self.markets_for(sport),
                 "markets_ready": markets_ready,
                 "head_report": head_report,
+                "market_report": nn_core.market_report(meta, sport),
                 "label_version": int(meta.get("label_version") or 0),
                 "ready": bool(model) and samples_count >= cfg["min_samples"],
                 "history": [

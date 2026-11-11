@@ -419,8 +419,12 @@ original_train = nn_core.train_model
 
 def worse_model(sport, rows, previous=None, **kwargs):
     model, report = original_train(sport, rows, previous=previous, **kwargs)
-    model.setdefault("meta", {})["accuracy"] = max(
-        0.0, good_accuracy - 0.15)
+    meta = model.setdefault("meta", {})
+    meta["accuracy"] = max(0.0, good_accuracy - 0.15)
+    # Главный ориентир при выборе модели — победитель: ухудшаем и его,
+    # иначе новая политика справедливо примет модель с тем же исходом.
+    meta["winner_accuracy"] = max(
+        0.0, float(meta.get("winner_accuracy") or 0.0) - 0.15)
     return model, report
 
 
@@ -802,7 +806,7 @@ linear_model, _report = nn_core.train_model(
 linear_meta = linear_model.get("meta") or {}
 check("модель обучена на версии признаков 2",
       linear_meta.get("feature_version") == 2, linear_meta)
-check("ревизия обучения 2",
+check("ревизия обучения актуальна",
       linear_meta.get("training_revision") == nn_core.TRAIN_REVISION,
       linear_meta)
 check("линейная голова выбрана при явном сигнале",
@@ -845,5 +849,116 @@ decision_metrics = nn_core._metrics_from_probs(
 check("победитель считается одним решением",
       decision_metrics["market_samples"]["winner"] == 3 and
       decision_metrics["winner_accuracy"] == 1.0, decision_metrics)
+
+# ------------------------------------------- отдельные модели рынков 1.29
+def specialist_case(count, signal, start=0):
+    """Строки только с рынком тотала: сигнал либо есть, либо шума."""
+    rows, vectors = [], []
+    size = nn_core.feature_size("football")
+    for index in range(start, start + count):
+        x = [0.0] * size
+        if signal:
+            strong = index % 2 == 0
+            x[0] = 1.0 if strong else -1.0
+            label = 1.0 if strong else 0.0
+        else:
+            x[0] = 1.0 if index % 2 == 0 else -1.0
+            label = 1.0 if index % 3 == 0 else 0.0
+        y = [0.0] * 6
+        y[3] = label
+        m = [0.0] * 6
+        m[3] = 1.0
+        rows.append({"x": x, "y": y, "m": m,
+                     "t": "2026-10-%02d" % (index % 28 + 1),
+                     "g": "specialist-%d" % index})
+        vectors.append(x)
+    return rows, vectors
+
+
+heads = nn_core.feature_spec("football")[1]
+strong_train, strong_x = specialist_case(60, True, 0)
+strong_val, strong_val_x = specialist_case(40, True, 60)
+specialist = nn_core._fit_market_specialist(
+    "football", "total", "over", strong_train, strong_val,
+    strong_x, strong_val_x, heads, 0.0)
+check("отдельная модель рынка включается при явном перевесе",
+      specialist is not None and
+      specialist["meta"]["ready"] is True and
+      specialist["meta"]["accuracy"] > specialist["meta"]["baseline"] + 0.1,
+      specialist and specialist["meta"])
+
+noise_train, noise_x = specialist_case(60, False, 0)
+noise_val, noise_val_x = specialist_case(40, False, 60)
+noise_specialist = nn_core._fit_market_specialist(
+    "football", "total", "over", noise_train, noise_val,
+    noise_x, noise_val_x, heads, 0.0)
+check("отдельная модель рынка молчит без перевеса",
+      noise_specialist is not None and
+      noise_specialist["meta"]["ready"] is False,
+      noise_specialist and noise_specialist["meta"])
+
+specialist_meta = {
+    "head_train_samples": {"p1": 40, "p2": 40, "draw": 40,
+                           "over": 60, "handicap": 0, "btts": 0},
+    "head_accuracy": {"p1": 0.8, "p2": 0.8, "draw": 0.8,
+                      "over": 0.5, "handicap": 0.0, "btts": 0.0},
+    "head_baseline": {"p1": 0.5, "p2": 0.5, "draw": 0.5,
+                      "over": 0.55, "handicap": 0.0, "btts": 0.0},
+    "head_samples": {"p1": 40, "p2": 40, "draw": 40,
+                     "over": 40, "handicap": 0, "btts": 0},
+    "train_samples": 60, "legacy_risk": 0.0,
+    "winner_accuracy": 0.8, "winner_baseline": 0.5, "winner_samples": 40,
+    "market_models": {"total": specialist["meta"]},
+}
+ready = nn_core.ready_markets(specialist_meta, "football")
+check("готовность рынка берётся у отдельной модели",
+      ready["total"] is True and ready["winner"] is True, ready)
+
+report = nn_core.market_report(specialist_meta, "football")
+by_kind = {item["kind"]: item for item in report}
+check("диагностика объясняет каждый рынок",
+      set(by_kind) == {"winner", "total", "handicap", "btts"} and
+      all(item["reason"] for item in report), report)
+check("диагностика показывает источник и перевес",
+      by_kind["total"]["source"] == "specialist" and
+      by_kind["total"]["ready"] is True and
+      by_kind["handicap"]["source"] == "head" and
+      "мало размеченных матчей" in by_kind["handicap"]["reason"],
+      by_kind)
+
+# Специалист не должен менять вероятности победителя.
+probe = [0.0] * nn_core.feature_size("football")
+probe[0] = 1.0
+base_probs = nn_core.predict_probs(linear_model, probe)
+with_specialist = dict(linear_model)
+with_specialist["market_models"] = {
+    "total": {
+        "head_state": {"indices": [0], "weights": [8.0], "bias": 0.0},
+        "temperature": 1.0,
+        "meta": {"ready": True},
+    },
+}
+special_probs = nn_core.predict_probs(with_specialist, probe)
+check("специалист не трогает вероятности победителя",
+      all(abs(base_probs[head] - special_probs[head]) < 1e-12
+          for head in ("p1", "p2", "draw")),
+      (base_probs, special_probs))
+check("специалист подменяет только свой рынок",
+      abs(base_probs["over"] - special_probs["over"]) > 1e-6,
+      (base_probs.get("over"), special_probs.get("over")))
+
+# Защита победителя при выборе лучшей модели.
+check("новая модель с худшим победителем отклоняется",
+      nn_trainer.NeuralTrainer._keeps_winner(
+          {"winner_accuracy": 0.70},
+          {"winner_accuracy": 0.80}, True) is False)
+check("допустимое колебание победителя не блокирует модель",
+      nn_trainer.NeuralTrainer._keeps_winner(
+          {"winner_accuracy": 0.797},
+          {"winner_accuracy": 0.80}, True) is True)
+check("без прежней оценки победителя решает общая точность",
+      nn_trainer.NeuralTrainer._keeps_winner(
+          {"winner_accuracy": 0.60, "accuracy": 0.40},
+          {"winner_accuracy": 0.0, "accuracy": 0.50}, True) is False)
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))
