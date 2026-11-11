@@ -668,4 +668,93 @@ check("в архиве есть причина", archived_rows and
 check("архив не удаляет пример", archived_rows and
       archived_rows[0].get("teams") == ["Старый", "Матч"], archived_rows[:1])
 
+
+# ---------------------------------------------------------- уверенность 1.27
+check("модель без отчёта по головам не готова",
+      nn_core.head_ready({}, "p1") is False,
+      nn_core.head_ready({}, "p1"))
+
+legacy_meta = {
+    "head_train_samples": {"p1": 100},
+    "head_accuracy": {"p1": 0.55},
+    "head_baseline": {"p1": 0.53},
+    "legacy_risk": 1.0,
+}
+check("старая разметка требует большего перевеса",
+      nn_core.head_ready(legacy_meta, "p1") is False, legacy_meta)
+legacy_meta["legacy_risk"] = 0.0
+check("доверенная разметка проходит с малым перевесом",
+      nn_core.head_ready(legacy_meta, "p1") is True, legacy_meta)
+
+# Веса строк: нулевой вес не меняет сеть, обычный — учит.
+n_feat = len(nn_core.feature_spec("football")[0])
+n_heads = len(nn_core.feature_spec("football")[1])
+tiny_net = nn_core.MLP([n_feat, 4, n_heads], seed=3)
+before = tiny_net.state()
+zero_loss = tiny_net.train_batch([([0.1] * n_feat, [1.0] * n_heads,
+                                   [1.0] * n_heads, 0.0)])
+check("нулевой вес не даёт шага", zero_loss == 0.0, zero_loss)
+check("нулевой вес не меняет веса",
+      tiny_net.state()["weights"] == before["weights"], "weights changed")
+one_loss = tiny_net.train_batch([([0.1] * n_feat, [1.0] * n_heads,
+                                 [1.0] * n_heads, 1.0)])
+check("ненулевой вес учит", one_loss > 0.0, one_loss)
+check("ненулевой вес меняет веса",
+      tiny_net.state()["weights"] != before["weights"], "weights same")
+
+# Обучение: температура и доля старой разметки попадают в meta.
+train_rows = []
+for index in range(60):
+    x = [0.1 + 0.01 * ((index * 7 + k) % 13) for k in range(n_feat)]
+    won = index % 2 == 0
+    y = [1.0 if won else 0.0, 0.0 if won else 1.0, 0.0,
+         1.0 if index % 3 else 0.0, 1.0 if index % 4 else 0.0,
+         1.0 if index % 5 else 0.0]
+    train_rows.append({"x": x, "y": y, "m": [1.0] * n_heads,
+                       "v": 0, "g": "g%d" % (index // 2),
+                       "t": "2026-10-%02d" % (index % 28 + 1)})
+model, report = nn_core.train_model("football", train_rows, epochs=3,
+                                    hidden_layers=[8], seed=5)
+check("обучение прошло", bool(model), report)
+meta = model.get("meta") or {}
+check("доля старой разметки сохранена",
+      abs(float(meta.get("legacy_risk") or 0.0) - 1.0) < 1e-6, meta)
+check("температура сохранена", float(meta.get("temperature") or 0) > 0,
+      meta.get("temperature"))
+base_probs = nn_core.predict_probs(model, train_rows[0]["x"])
+model["temperature"] = float(meta.get("temperature") or 1.0) * 2.0
+warm_probs = nn_core.predict_probs(model, train_rows[0]["x"])
+check("рост температуры сжимает вероятности",
+      all(abs(warm_probs[h] - 0.5) <= abs(base_probs[h] - 0.5) + 1e-9
+          for h in base_probs), (base_probs, warm_probs))
+
+# Разметка периодных видов после простоя, а не только по фиду.
+check("футбол с двумя таймами — финал",
+      nn_trainer.NeuralTrainer._score_looks_final(
+          "football", "2:1 (1:0, 1:1)", 0.0) is True)
+check("футбол с одним таймом — не финал",
+      nn_trainer.NeuralTrainer._score_looks_final(
+          "football", "1:0 (1:0)", 0.5) is False)
+check("футбол без таймов после простоя — финал",
+      nn_trainer.NeuralTrainer._score_looks_final(
+          "football", "1:0", 7.0) is True)
+check("баскетбол с четырьмя четвертями — финал",
+      nn_trainer.NeuralTrainer._score_looks_final(
+          "basketball", "96:86 (27:24, 31:21, 29:19, 9:22)", 0.0) is True)
+check("баскетбол с двумя четвертями — не финал",
+      nn_trainer.NeuralTrainer._score_looks_final(
+          "basketball", "35:23 (27:14, 8:9)", 1.0) is False)
+
+idle_home = nn_trainer.NeuralTrainer(tempfile.mkdtemp(prefix="nn_idle_"),
+                                     eng.settings, None)
+idle_home._pending = [{
+    "sport": "football", "teams": ["Простой", "Матч"],
+    "created": (_dt.datetime.now() - _dt.timedelta(hours=8)).isoformat(),
+    "last_score": "1:0", "x": [0.0] * n_feat, "line": 2.5,
+}]
+idle_home.update_pending_scores({("football", "Простой", "Матч"): "2:1"})
+check("время изменения счёта записано",
+      bool(idle_home._pending[0].get("score_at")),
+      idle_home._pending[0])
+
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

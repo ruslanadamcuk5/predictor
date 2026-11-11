@@ -45,6 +45,14 @@ PLATEAU_NEW_SHARE = 0.25      # доля новых примеров, чтобы
 IMPROVE_EPS = 0.005           # минимальный прирост точности, чтобы считать улучшением
 HISTORY_LIMIT = 30            # сколько точек истории храним по виду
 
+
+def _revision(meta):
+    """Ревизия обучения модели (0 — до 1.27)."""
+    try:
+        return int((meta or {}).get("training_revision") or 0)
+    except (TypeError, ValueError):
+        return 0
+
 # Параметры сети и обучения. Значения проверяются на входе: из веб-формы
 # может прийти строка, пустое поле или число вне диапазона.
 NN_ACTIVATIONS = ("tanh", "relu", "sigmoid")
@@ -521,6 +529,10 @@ class NeuralTrainer:
                     continue
                 if record.get("last_score") != value:
                     record["last_score"] = value
+                    # Время последнего изменения счёта: по нему видно,
+                    # что матч давно не двигался и счёт, скорее всего,
+                    # итоговый, даже если событие ещё в линии.
+                    record["score_at"] = _now()
                     updated += 1
             if updated:
                 self._save_pending()
@@ -560,6 +572,13 @@ class NeuralTrainer:
                     # определённого победителя: тотал может быть неизвестен.
                     parsed = sports.parse_score(sport, score_text)
                     usable = sports.score_decided(sport, parsed)
+                if not usable and score_text and not from_line:
+                    # Событие ушло из линии, а счёт остался последним
+                    # увиденным. Для периодных видов (футбол, хоккей,
+                    # баскетбол) это итог, только если счёт давно не
+                    # менялся: иначе можно разметить середину матча.
+                    idle = self._idle_hours(record, now)
+                    usable = self._score_looks_final(sport, score_text, idle)
                 if not usable:
                     if self._too_old(record, now):
                         expired.append(record)
@@ -622,6 +641,47 @@ class NeuralTrainer:
         if sport == "tennis":
             return high == 3 and low <= 2
         return sports.score_decided(sport, parsed)
+
+    @staticmethod
+    def _idle_hours(record, now=None):
+        """Сколько часов счёт примера не менялся."""
+        stamp = (record or {}).get("score_at") or \
+            (record or {}).get("created") or ""
+        try:
+            moment = datetime.fromisoformat(str(stamp))
+        except Exception:
+            return 0.0
+        now = now or datetime.now()
+        return max(0.0, (now - moment).total_seconds() / 3600.0)
+
+    @classmethod
+    def _score_looks_final(cls, sport, score_text, idle_hours):
+        """Можно ли считать последний счёт итоговым без отметки «завершён».
+
+        У футбола/хоккея/баскетбола матч уходит из фида с задержкой,
+        поэтому последний счёт сам по себе не доказывает финал. Но если
+        видны все периоды (таймы, трети, четверти) или счёт не менялся
+        несколько часов, матч почти наверняка доигран. Тогда пример
+        размечается, а не ждёт тайм-аута и не уходит в архив.
+        """
+        sport = sports.normalize_sport(sport)
+        item = sports.profile(sport)
+        if item["score_mode"] == "sets":
+            return cls._score_complete(sport, score_text)
+        parsed = sports.parse_score(sport, score_text)
+        if not parsed:
+            return False
+        expected = int(item.get("periods") or 0)
+        periods = parsed.get("periods") or []
+        if expected and len(periods) >= expected:
+            return True
+        if item["score_mode"] == "single" and expected:
+            _match, inner = sports.split_score_text(score_text)
+            if len(sports.score_pairs(inner)) >= expected:
+                return True
+        # Без счёта периодов остаётся только время: 6 часов простоя
+        # больше любой паузы между периодами.
+        return float(idle_hours or 0.0) >= 6.0
 
     @staticmethod
     def _too_old(record, now=None):
@@ -802,8 +862,19 @@ class NeuralTrainer:
                     previous = self._models.get(sport)
                 if len(rows) < min_samples:
                     continue
-                if previous and not force:
-                    meta = previous.get("meta") or {}
+                meta = (previous or {}).get("meta") or {}
+                # Модель без отчёта по головам (обучена до 1.27) не может
+                # открыть рынки: head_ready её не пропускает. Её нужно
+                # переобучить сразу, не дожидаясь пяти новых примеров и
+                # не упираясь в плато.
+                needs_recoverage = bool(previous) and (
+                    not isinstance(meta.get("head_train_samples"), dict) or
+                    _revision(meta) < nn_core.TRAIN_REVISION)
+                if needs_recoverage:
+                    self._log("Нейросеть: %s — нет отчёта по головам, "
+                              "переобучаем модель" %
+                              sports.short_name(sport))
+                if previous and not force and not needs_recoverage:
                     trained_on = int(meta.get("samples") or 0)
                     new_rows = max(0, len(rows) - trained_on)
                     if trained_on and new_rows < 5:
@@ -824,7 +895,8 @@ class NeuralTrainer:
                 try:
                     model, report = nn_core.train_model(
                         sport, rows, previous=previous,
-                        epochs=cfg["epochs"] if previous is None
+                        epochs=cfg["epochs"]
+                        if (previous is None or needs_recoverage)
                         else cfg["finetune_epochs"],
                         lr=cfg["learning_rate"],
                         l2=cfg["l2"],
@@ -850,6 +922,13 @@ class NeuralTrainer:
                     share=cfg["validation_share"])
                 old_accuracy = float(old_metrics.get("accuracy")) \
                     if old_metrics else None
+                # Модель без покрытия по головам не может открыть рынки:
+                # её нужно переобучить, даже если общая точность чуть
+                # просела. Иначе старые модели навсегда остаются «готовыми»
+                # без проверки перевеса по каждому рынку.
+                old_meta = (previous or {}).get("meta") or {}
+                needs_recoverage = bool(previous) and not isinstance(
+                    old_meta.get("head_train_samples"), dict)
                 history = self._history(previous)
                 entry = {
                     "at": new_meta["updated_at"],
@@ -865,6 +944,7 @@ class NeuralTrainer:
                     "rejected": False,
                 }
                 if (old_accuracy is not None and previous and
+                        not needs_recoverage and
                         not self._is_better(new_accuracy, old_accuracy,
                                             cfg["keep_best"])):
                     # Переобучение: оставляем прежнюю модель.

@@ -505,8 +505,62 @@ status, data = request("GET", "/service")
 check("страница состояния сохранена", status["status"] == 200
       and "Онлайн-анализ" in data.get("raw", ""), status)
 
+# --------------------------------------------------------------------------
+# 7. Источник каждого прогноза: нейросеть и конструктор видны отдельно
+# --------------------------------------------------------------------------
+SOURCES_SNAPSHOT = {
+    "device": {
+        "id": "dev_sources", "name": "Телефон источников",
+        "model": "Pixel 9", "platform": "Android 16",
+        "app_version": "1.27.0",
+    },
+    "settings": {"active_sport": "table_tennis", "auto_rules": {}},
+    "rules": {},
+    "predictions": {
+        "s01": {
+            "team1": "Игрок А", "team2": "Игрок Б", "date": "20.10.26",
+            "league": "Тест", "sport": "table_tennis",
+            "sent_at": "2026-10-20T12:00:00",
+            "predictions": [
+                {"target": "match", "kind": "winner", "label": "Победитель",
+                 "verdict": "П1", "confidence_val": 0.64,
+                 "source": "neural"},
+                {"target": "set1", "kind": "total", "label": "Тотал партии",
+                 "verdict": "ТБ 18.5", "confidence_val": 0.58,
+                 "source": "constructor", "rule_id": "r1",
+                 "rule_name": "Тотал"},
+            ],
+            "set_results": [
+                {"target": "match", "kind": "winner", "success": True,
+                 "score": "3:1", "label": "Победитель", "verdict": "П1"},
+                {"target": "set1", "kind": "total", "success": False,
+                 "score": "8:11", "total": 19, "label": "Тотал партии",
+                 "verdict": "ТБ 18.5"},
+            ],
+            "stats": {},
+        },
+    },
+    "advisor_state": {},
+    "meta": {},
+}
+status, data = request("POST", "/api/v1/sync", SOURCES_SNAPSHOT)
+check("источники: снимок принят", status["status"] == 200, (status, data))
+status, data = request("GET", "/api/v1/history/devices/dev_sources/predictions")
+rows = [row for item in data.get("items", []) for row in item["rows"]]
+check("источники: нейросеть и конструктор сохранены отдельно",
+      sorted(row["source"] for row in rows) == ["constructor", "neural"],
+      rows)
+check("источники: у конструктора остался rule_id",
+      any(row["source"] == "constructor" and row["rule_id"] == "r1"
+          for row in rows), rows)
+status, data = request("GET", "/api/v1/history/devices/dev_sources/overview")
+by_source = {item["source"]: item for item in data.get("sources", [])}
+check("источники: сводка по источникам в обзоре",
+      by_source.get("neural", {}).get("total") == 1
+      and by_source.get("constructor", {}).get("total") == 1, data.get("sources"))
+
 status, data = request("GET", "/api/v1/history/health")
 check("health: база создана", data.get("ok") is True
-      and data.get("devices") == 3, data)
+      and data.get("devices") == 4, data)
 
 print("\nPASSED:", len(PASSED))

@@ -41,7 +41,7 @@ import profit  # noqa: E402
 import rule_advisor  # noqa: E402
 import sports as sport_catalog  # noqa: E402
 
-SERVER_VERSION = "1.26.0"
+SERVER_VERSION = "1.27.0"
 SCHEMA_VERSION = 1
 MAX_DEVICE_ROWS = 40000
 RETENTION_DAYS = 400
@@ -565,6 +565,19 @@ def _result_for(pred, target, kind, source="rule"):
     return {}
 
 
+def _prediction_source(item, fallback="rule"):
+    """Источник одного прогноза: нейросеть, конструктор, встроенное или правило.
+
+    Раньше все строки писались как ``rule``, и по серверной статистике
+    нельзя было понять, как работает нейросеть. Теперь источник берётся
+    у самого прогноза, а неизвестное значение падает в fallback.
+    """
+    value = str((item or {}).get("source") or "").strip().lower()
+    if value in ("neural", "constructor", "builtin", "rule", "ai"):
+        return value
+    return fallback
+
+
 def _prediction_rows(pred_id, pred, source="rule"):
     if not isinstance(pred, dict):
         return []
@@ -584,7 +597,10 @@ def _prediction_rows(pred_id, pred, source="rule"):
         target = str(item.get("target") or "")
         kind = str(item.get("kind") or "")
         label = _clean(item.get("label") or target, 120)
-        result = _result_for(pred, target, kind, source=source)
+        item_source = _prediction_source(item, source)
+        result = _result_for(
+            pred, target, kind,
+            source=("ai" if source == "ai" else "rule"))
         success = result.get("success")
         if success is not None:
             success = 1 if success else 0
@@ -602,10 +618,12 @@ def _prediction_rows(pred_id, pred, source="rule"):
         rows.append({
             "device_id": "",
             "pred_id": str(pred_id),
-            "row_key": "%s|%s|%s|%s" % (source, target, kind, label),
+            "row_key": "%s|%s|%s|%s" % (item_source, target, kind, label),
             "sport": sport,
-            "rule_id": str(item.get("rule_id") or "") if source == "rule" else "",
-            "rule_name": _clean(item.get("rule_name"), 160) if source == "rule" else "",
+            "rule_id": str(item.get("rule_id") or "")
+            if item_source in ("rule", "constructor") else "",
+            "rule_name": _clean(item.get("rule_name"), 160)
+            if item_source in ("rule", "constructor") else "",
             "team1": team1, "team2": team2, "league": league,
             "sent_at": sent_at,
             "target": target, "kind": kind, "label": label,
@@ -616,7 +634,7 @@ def _prediction_rows(pred_id, pred, source="rule"):
             "score": _clean(result.get("score"), 60),
             "total": total,
             "checked_from": _clean(result.get("checked_from"), 40),
-            "source": source,
+            "source": item_source,
             "updated_at": _now_iso(),
         })
     if not rows and source == "rule":
@@ -818,7 +836,7 @@ def _rule_performance(conn, device_id, rule_id, sport=None, since=None,
 
 def _sport_performance(conn, device_id, sport, since=None, until=None,
                        days=None):
-    clauses = ["device_id = ?", "source = 'rule'"]
+    clauses = ["device_id = ?", "source IN ('rule', 'neural', 'constructor', 'builtin')"]
     params = [device_id]
     if sport:
         clauses.append("sport = ?")
@@ -850,7 +868,7 @@ def _daily_series(conn, device_id, days=30):
     since = (_now_dt() - timedelta(days=max(1, days) - 1)).date().isoformat()
     rows = conn.execute(
         "SELECT sent_at, success, odds FROM prediction_rows "
-        "WHERE device_id = ? AND source = 'rule' AND sent_at >= ?",
+        "WHERE device_id = ? AND source IN ('rule', 'neural', 'constructor', 'builtin') AND sent_at >= ?",
         (device_id, since)).fetchall()
     buckets = {}
     for offset in range(days):
@@ -887,7 +905,7 @@ def _daily_series(conn, device_id, days=30):
 def _window_stats(conn, device_id, start, end):
     rows = conn.execute(
         "SELECT success, odds FROM prediction_rows WHERE device_id = ? "
-        "AND source = 'rule' AND sent_at >= ? AND sent_at < ?",
+        "AND source IN ('rule', 'neural', 'constructor', 'builtin') AND sent_at >= ? AND sent_at < ?",
         (device_id, start, end)).fetchall()
     return _row_stats(rows)
 
@@ -954,7 +972,7 @@ def _minutes_since(value):
 def _device_stats(conn, device_id):
     rows = conn.execute(
         "SELECT success, odds FROM prediction_rows WHERE device_id = ? "
-        "AND source = 'rule'", (device_id,)).fetchall()
+        "AND source IN ('rule', 'neural', 'constructor', 'builtin')", (device_id,)).fetchall()
     stats = _row_stats(rows)
     resolved = stats["resolved"]
     stats["checked_share"] = (round(resolved * 100.0 /
@@ -1570,14 +1588,14 @@ def device_overview(device_id, days=30):
             "SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) AS wins, "
             "SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) AS losses, "
             "SUM(CASE WHEN success IS NULL THEN 1 ELSE 0 END) AS pending "
-            "FROM prediction_rows WHERE device_id=? AND source='rule' "
+            "FROM prediction_rows WHERE device_id=? AND source IN ('rule', 'neural', 'constructor', 'builtin') "
             "GROUP BY sport ORDER BY total DESC", (device_id,)).fetchall()
         sports = []
         for item in sports_rows:
             resolved = _int(item["wins"]) + _int(item["losses"])
             money = _row_stats(conn.execute(
                 "SELECT success, odds FROM prediction_rows WHERE "
-                "device_id=? AND source='rule' AND sport=?",
+                "device_id=? AND source IN ('rule', 'neural', 'constructor', 'builtin') AND sport=?",
                 (device_id, item["sport"])).fetchall())
             sports.append({
                 "sport": item["sport"],
@@ -1599,14 +1617,14 @@ def device_overview(device_id, days=30):
             "SELECT kind, COUNT(*) AS total, "
             "SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) AS wins, "
             "SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) AS losses "
-            "FROM prediction_rows WHERE device_id=? AND source='rule' "
+            "FROM prediction_rows WHERE device_id=? AND source IN ('rule', 'neural', 'constructor', 'builtin') "
             "GROUP BY kind ORDER BY total DESC", (device_id,)).fetchall()
         targets = []
         for item in targets_rows:
             resolved = _int(item["wins"]) + _int(item["losses"])
             money = _row_stats(conn.execute(
                 "SELECT success, odds FROM prediction_rows WHERE "
-                "device_id=? AND source='rule' AND kind=?",
+                "device_id=? AND source IN ('rule', 'neural', 'constructor', 'builtin') AND kind=?",
                 (device_id, item["kind"])).fetchall())
             targets.append({
                 "kind": item["kind"] or "—", "total": _int(item["total"]),
@@ -1619,10 +1637,27 @@ def device_overview(device_id, days=30):
                 "odds_n": money.get("odds_n") or 0,
             })
         events = _events(conn, device_id, limit=8, offset=0)
+        sources_rows = conn.execute(
+            "SELECT source, COUNT(*) AS total, "
+            "SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) AS wins, "
+            "SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) AS losses "
+            "FROM prediction_rows WHERE device_id=? "
+            "GROUP BY source ORDER BY total DESC", (device_id,)).fetchall()
+        sources = []
+        for item in sources_rows:
+            resolved = _int(item["wins"]) + _int(item["losses"])
+            sources.append({
+                "source": item["source"] or "rule",
+                "total": _int(item["total"]), "wins": _int(item["wins"]),
+                "losses": _int(item["losses"]),
+                "hit_rate": (round(_int(item["wins"]) * 100.0 / resolved, 1)
+                             if resolved else None),
+            })
         device["meta"] = _json(row["meta_json"], {})
         return {
             "ok": True, "device": device, "sports": sports,
-            "targets": targets, "events": events["items"],
+            "targets": targets, "sources": sources,
+            "events": events["items"],
             "server_version": SERVER_VERSION, "server_time": _now(),
         }
     finally:

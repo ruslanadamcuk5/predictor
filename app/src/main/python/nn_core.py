@@ -112,11 +112,28 @@ MARKET_LABELS = {
 # вслепую, а сохраняем в архиве.
 LABEL_VERSION = 3
 
+# Ревизия обучения: 1.27 добавила веса старых строк и калибровку
+# температуры. Модель без этой ревизии переобучается один раз, иначе
+# старые веса продолжали бы давать вероятности без проверки.
+TRAIN_REVISION = 1
+
 # Минимум обучающих примеров на голову, чтобы рынок давал прогноз.
 # Рынок без покрытия или без перевеса над «всегда самый частый класс»
 # молчит: редкие и случайные сигналы не должны выглядеть уверенными.
 MARKET_MIN_TRAIN_SAMPLES = 20
 MARKET_MIN_LIFT = 0.01
+# Дополнительный перевес за каждую долю строк со старой разметкой.
+# Футбол/теннис/волейбол до 1.25 могли размечаться по счёту периода,
+# поэтому при legacy_risk ≈ 1 рынку нужно на 3 п.п. больше.
+MARKET_LEGACY_LIFT = 0.03
+# Виды спорта, где прежний парсер мог взять счёт периода за итог матча.
+# Их строки без LABEL_VERSION не выбрасываем (данных и так мало), но
+# учим с пониженным весом: сигнал есть, доверия меньше.
+LEGACY_RISK_SPORTS = ("football", "tennis", "volleyball")
+LEGACY_SAMPLE_WEIGHT = 0.35
+# Пределы температуры калибровки: 1.0 — вероятности уже честные,
+# больше 1 — модель была слишком самоуверенна и её ответы сжимаются.
+TEMPERATURE_RANGE = (0.35, 5.0)
 # Если класс почти всегда один (ничьих нет, обе забьют всегда «нет»),
 # базовый уровень близок к 100%, и требовать перевеса бессмысленно:
 # достаточно не ошибаться на этом классе.
@@ -126,13 +143,18 @@ MARKET_DEGENERATE_BASELINE = 0.9
 def head_ready(meta, head):
     """Готова ли голова рынка к прогнозам по своей выборке.
 
-    Старые модели не хранят покрытие по головам — для них проверка
-    пропускается, чтобы обновление не выключило уже обученные рынки.
+    Модель без отчёта по головам считается неготовой: это старая модель,
+    которую нужно переобучить. Иначе рынки без проверенного перевеса
+    продолжали бы давать прогнозы «по инерции».
+
+    Чем выше доля строк со старой разметкой (``legacy_risk``), тем больше
+    нужен перевес над базой: непроверенные метки не должны превращаться
+    в уверенные сигналы.
     """
     meta = meta or {}
     coverage = meta.get("head_train_samples") or {}
     if not isinstance(coverage, dict) or head not in coverage:
-        return True
+        return False
     try:
         samples = int(coverage.get(head) or 0)
     except (TypeError, ValueError):
@@ -142,15 +164,18 @@ def head_ready(meta, head):
     accuracy = (meta.get("head_accuracy") or {}).get(head)
     baseline = (meta.get("head_baseline") or {}).get(head)
     if accuracy is None or baseline is None:
-        return True
+        return False
     try:
         accuracy = float(accuracy)
         baseline = float(baseline)
+        risk = float(meta.get("legacy_risk") or 0.0)
+        risk = min(1.0, max(0.0, risk))
+        required = MARKET_MIN_LIFT + MARKET_LEGACY_LIFT * risk
         if baseline >= MARKET_DEGENERATE_BASELINE:
             return accuracy >= baseline - MARKET_MIN_LIFT
-        return accuracy >= baseline + MARKET_MIN_LIFT
+        return accuracy >= baseline + required
     except (TypeError, ValueError):
-        return True
+        return False
 
 
 def market_kinds(sport):
@@ -465,21 +490,51 @@ class MLP:
     def predict(self, x):
         return self.forward(x)[-1]
 
+    def logits(self, x):
+        """Сырые выходы последнего слоя (до сигмоиды).
+
+        Нужны для калибровки температуры: делить на температуру можно
+        только логиты, а не уже сжатые вероятности.
+        """
+        acts = self.forward(x)
+        if not self.weights:
+            return list(acts[-1])
+        prev = acts[-2]
+        layer = self.weights[-1]
+        bias = self.biases[-1]
+        return [b + sum(w * v for w, v in zip(row, prev))
+                for row, b in zip(layer, bias)]
+
     # ---------- обучение ----------
     def train_batch(self, rows, lr=0.05, momentum=0.9, l2=0.0):
-        """Один шаг mini-batch. rows: список (x, y, mask).
+        """Один шаг mini-batch. rows: список (x, y, mask) или (x, y, mask, w).
 
+        Вес w (0..1) задаёт доверие к примеру: строки со старой разметкой
+        участвуют в обучении слабее, но не выбрасываются.
         l2 — слабая регуляризация весов: на сотнях примеров сеть иначе
         легко заучивает шум и «переобучается» уже к 10-й эпохе.
         """
         if not rows:
             return 0.0
-        n = len(rows)
+        total_weight = 0.0
         grad_w = [[[0.0] * len(row) for row in layer]
                   for layer in self.weights]
         grad_b = [[0.0] * len(row) for row in self.biases]
         loss = 0.0
-        for x, y, mask in rows:
+        for item in rows:
+            if len(item) >= 4:
+                x, y, mask = item[0], item[1], item[2]
+                try:
+                    weight = float(item[3])
+                except (TypeError, ValueError):
+                    weight = 1.0
+            else:
+                x, y, mask = item
+                weight = 1.0
+            weight = max(0.0, min(5.0, weight))
+            if weight <= 0.0:
+                continue
+            total_weight += weight
             acts = self.forward(x)
             out = acts[-1]
             delta = []
@@ -489,8 +544,9 @@ class MLP:
                     continue
                 target = y[j]
                 p = min(max(p, 1e-9), 1.0 - 1e-9)
-                loss += -(target * math.log(p) + (1.0 - target) * math.log(1.0 - p))
-                delta.append((p - target) * mask[j])
+                loss += weight * (-(target * math.log(p) +
+                                    (1.0 - target) * math.log(1.0 - p)))
+                delta.append(weight * (p - target) * mask[j])
             for layer_index in range(len(self.weights) - 1, -1, -1):
                 layer = self.weights[layer_index]
                 prev_act = acts[layer_index]
@@ -520,7 +576,9 @@ class MLP:
                         prev_delta[k] *= self._hidden_derivative(activation)
                     delta = prev_delta
 
-        scale = lr / float(n)
+        if total_weight <= 0.0:
+            return 0.0
+        scale = lr / total_weight
         for layer_index in range(len(self.weights)):
             layer = self.weights[layer_index]
             bias = self.biases[layer_index]
@@ -535,7 +593,7 @@ class MLP:
                 mom_b = momentum * mom_b + grad_b[layer_index][out_index] * scale
                 self._momentum_b[layer_index][out_index] = mom_b
                 bias[out_index] -= mom_b
-        return loss / float(n)
+        return loss / total_weight
 
     # ---------- сохранение ----------
     def state(self):
@@ -709,6 +767,59 @@ def evaluate_model(model, standardizer, rows, heads):
     }
 
 
+def fit_temperature(model, standardizer, rows, heads,
+                    bounds=None, steps=60):
+    """Подбирает температуру, при которой уверенность не врёт.
+
+    Сеть с сигмоидой часто выдаёт 0.9 там, где права в 60% случаев:
+    порог уверенности тогда ничего не значит, а рынки выглядят
+    «уверенными» без оснований. Температура делит логиты, не меняя
+    порядок классов (точность та же), и делает вероятности честными.
+
+    Возвращает (temperature, loss). При пустой выборке — (1.0, None).
+    """
+    net = model if isinstance(model, MLP) else MLP.load(model or {})
+    heads = list(heads or [])
+    samples = []
+    for row in rows or []:
+        y = row.get("y") or []
+        mask = row.get("m") or []
+        try:
+            z = net.logits(standardizer.transform(row["x"]))
+        except Exception:
+            continue
+        active = [(float(y[i]), float(z[i])) for i in range(len(z))
+                  if i < len(y) and i < len(mask) and mask[i] > 0]
+        if active:
+            samples.append(active)
+    if not samples:
+        return 1.0, None
+    low, high = bounds or TEMPERATURE_RANGE
+    low = max(1e-3, float(low))
+    high = max(low, float(high))
+    steps = max(2, int(steps))
+    best_t, best_loss = 1.0, None
+    for step in range(steps):
+        # Логарифмическая сетка: температуры 0.35..5 важны не линейно.
+        ratio = step / float(steps - 1)
+        temperature = low * ((high / low) ** ratio)
+        loss = 0.0
+        count = 0
+        for active in samples:
+            for target, logit in active:
+                p = sigmoid(logit / temperature)
+                p = min(max(p, 1e-9), 1.0 - 1e-9)
+                loss += -(target * math.log(p) +
+                          (1.0 - target) * math.log(1.0 - p))
+                count += 1
+        if not count:
+            continue
+        loss /= count
+        if best_loss is None or loss < best_loss:
+            best_t, best_loss = temperature, loss
+    return best_t, best_loss
+
+
 def split_rows(rows, share=0.2):
     """Делит выборку на обучение и проверку, не разрывая один матч.
 
@@ -776,6 +887,28 @@ def evaluate_previous(sport, previous, rows, share=0.2):
         return None
 
 
+def _row_version(row):
+    """Версия разметки строки (0 — старая, без метки)."""
+    try:
+        return int((row or {}).get("v") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _row_weight(sport, version):
+    """Вес строки в обучении по версии разметки и виду спорта.
+
+    Старая разметка футбола/тенниса/волейбола могла быть снята со счёта
+    периода. Такие строки не выбрасываем — иначе выборка усохнет и
+    модели не на чем учиться, — но даём им меньший вес.
+    """
+    if version >= LABEL_VERSION:
+        return 1.0
+    if sports.normalize_sport(sport) in LEGACY_RISK_SPORTS:
+        return LEGACY_SAMPLE_WEIGHT
+    return 1.0
+
+
 def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
                 seed=7, pause=None, l2=0.001, momentum=0.9,
                 batch_size=32, validation_share=0.2, hidden_layers=None,
@@ -839,8 +972,19 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
     model = MLP.load(previous) if reuse else MLP(
         sizes, seed=seed, activation=activation)
 
-    prepared = [(standardizer.transform(row["x"]), row["y"], row["m"])
-                for row in train_rows]
+    prepared = []
+    legacy_active = 0
+    risky_legacy = sports.normalize_sport(sport) in LEGACY_RISK_SPORTS
+    for row in train_rows:
+        version = _row_version(row)
+        weight = _row_weight(sport, version)
+        if (risky_legacy and version < LABEL_VERSION and any(
+                float(v) > 0 for v in (row.get("m") or []))):
+            legacy_active += 1
+        prepared.append((standardizer.transform(row["x"]), row["y"],
+                         row["m"], weight))
+    legacy_risk = (legacy_active / float(len(train_rows))) \
+        if train_rows else 0.0
     head_train_samples = {}
     for index, head in enumerate(heads):
         head_train_samples[head] = sum(
@@ -882,7 +1026,13 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
         metrics = best_metrics
     else:
         metrics = evaluate_model(model, standardizer, val_rows, heads)
+    # Калибровка по отложенным матчам: сеть не должна быть увереннее,
+    # чем позволяет её реальная точность. Точность при этом не меняется,
+    # меняется только масштаб вероятностей.
+    temperature, calibration_loss = fit_temperature(
+        model, standardizer, val_rows, heads)
     state = model.state()
+    state["temperature"] = temperature
     state.update({
         "sport": sport,
         "layout": layout,
@@ -904,6 +1054,11 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
             "head_accuracy": metrics.get("head_accuracy") or {},
             "head_baseline": metrics.get("head_baseline") or {},
             "head_train_samples": head_train_samples,
+            "training_revision": TRAIN_REVISION,
+            "legacy_risk": round(legacy_risk, 4),
+            "legacy_weight": LEGACY_SAMPLE_WEIGHT,
+            "temperature": temperature,
+            "calibration_loss": calibration_loss,
             "label_version": LABEL_VERSION,
             "architecture": list(hidden_layers),
             "activation": activation,
@@ -929,7 +1084,14 @@ def predict_probs(model, features):
     standardizer = Standardizer(model.get("standardizer", {}).get("mean"),
                                 model.get("standardizer", {}).get("std"))
     net = MLP.load(model)
-    probs = net.predict(standardizer.transform(features))
+    try:
+        temperature = float(model.get("temperature") or 1.0)
+    except (TypeError, ValueError):
+        temperature = 1.0
+    if temperature <= 0.0:
+        temperature = 1.0
+    logits = net.logits(standardizer.transform(features))
+    probs = [sigmoid(value / temperature) for value in logits]
     heads = model.get("heads") or []
     return {head: probs[i] for i, head in enumerate(heads)
             if i < len(probs)}
