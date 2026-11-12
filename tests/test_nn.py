@@ -260,7 +260,10 @@ for index in range(40):
     check_ok = index == 0
     if check_ok:
         check("образец сохранён", ok, ok)
-    finished[("football", team1, team2)] = "2:0" if p1_won else "0:2"
+    # Тотал не должен быть вырожденным: иначе у рынка нет сигнала и он
+    # честно скрывается. Победа П1 даёт 2:0 (низ), поражение — 1:2 (верх).
+    finished[("football", team1, team2)] = ("2:0 (1:0, 1:0)" if p1_won
+                                            else "1:2 (0:1, 1:1)")
 
 status = trainer.status()
 check("образцы ждут результата", status["pending"] == 40, status["pending"])
@@ -481,7 +484,8 @@ check("экспорт нейросети содержит выборку",
 check("экспорт содержит версию разметки",
       snapshot.get("label_version") == nn_core.LABEL_VERSION, snapshot)
 check("экспорт содержит исходный счёт строки",
-      (snapshot["samples"]["football"][0].get("score") in ("2:0", "0:2")),
+      (snapshot["samples"]["football"][0].get("score") in
+       ("2:0", "0:2", "2:0 (1:0, 1:0)", "1:2 (0:1, 1:1)")),
       snapshot["samples"]["football"][:1])
 check("экспорт содержит резервные копии", "backups" in snapshot, snapshot.keys())
 lean = json.loads(trainer.export_snapshot(include_backups=False))
@@ -931,6 +935,18 @@ specialist_meta = {
 ready = nn_core.ready_markets(specialist_meta, "football")
 check("готовность рынка берётся у отдельной модели",
       ready["total"] is True and ready["winner"] is True, ready)
+
+# Голова может ошибочно счесть рынок готовым на короткой проверке
+# (так было у форы волейбола: +6.5 п.п. на 46 матчах). Если специалист
+# на своих расширяющихся окнах перевеса не нашёл, рынок закрывается:
+# слово специалиста главнее, иначе показывается прогноз без сигнала.
+head_ready_meta = dict(specialist_meta)
+head_ready_meta["head_accuracy"] = dict(specialist_meta["head_accuracy"])
+head_ready_meta["head_accuracy"]["over"] = 0.70
+head_ready_meta["market_models"] = {"total": noise_specialist["meta"]}
+blocked = nn_core.ready_markets(head_ready_meta, "football")
+check("ложная готовность головы закрывается специалистом",
+      blocked["total"] is False and blocked["winner"] is True, blocked)
 
 report = nn_core.market_report(specialist_meta, "football")
 by_kind = {item["kind"]: item for item in report}

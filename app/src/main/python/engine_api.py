@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.31.0"
+APP_VERSION = "1.32.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 

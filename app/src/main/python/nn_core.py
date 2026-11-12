@@ -117,7 +117,7 @@ LABEL_VERSION = 3
 # обе забьют) и диагностику по рынкам, поэтому старые модели нужно один
 # раз переобучить: у них ещё нет проверки специалистов на отложенных
 # матчах.
-TRAIN_REVISION = 5
+TRAIN_REVISION = 6
 
 # Версия вектора признаков. 1 — «сырые» метрики конструктора, 2 — они же
 # плюс производные разности (линия тотала, фора, форма, коэффициенты).
@@ -1983,18 +1983,30 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
         "winner_samples": metrics.get("winner_samples"),
     }
     ready = ready_markets(base_meta, sport)
-    # Отдельная модель на каждый неготовый рынок. Победитель сюда не
+    # Отдельная модель на каждый рынок, кроме победителя. Специалист
+    # проверяется и на тех рынках, где голова уже считает себя готовой:
+    # иначе ложная готовность головы (например, фора волейбола на 46
+    # матчах) остаётся без независимой проверки. Победитель сюда не
     # входит: его вероятности по-прежнему считает основная сеть, поэтому
     # добавление специалистов не может ухудшить текущую точность исхода.
     market_models = {}
     for kind, head in SPECIALIST_HEADS.items():
-        if kind not in market_kinds(sport) or ready.get(kind):
+        if kind not in market_kinds(sport):
             continue
         specialist = _fit_market_specialist(
             sport, kind, head, train_rows, val_rows, train_x, val_x,
             heads, legacy_risk)
-        if specialist:
-            market_models[kind] = specialist
+        if not specialist:
+            continue
+        if specialist.get("meta", {}).get("ready") and ready.get(kind):
+            # Голова уже даёт этот рынок и прошла свою проверку. Не
+            # подменяем её специалистом без доказанного превосходства:
+            # на футболе «обе забьют» голова точнее линейной модели.
+            continue
+        # Либо специалист открывает рынок, который голова не тянула,
+        # либо закрывает ложную готовность головы: у него своя проверка
+        # на нескольких окнах, и его слово здесь главнее.
+        market_models[kind] = specialist
     if market_models:
         state["market_models"] = market_models
         # Специалисты изменили вероятности своих рынков: метрики и

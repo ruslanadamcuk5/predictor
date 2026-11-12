@@ -4,9 +4,9 @@
 
 | Параметр | Значение |
 |---|---|
-| `APP_VERSION` (`engine_api.py`) | 1.31.0 |
-| `versionName` (`app/build.gradle.kts`) | 1.31 |
-| `versionCode` | 32 |
+| `APP_VERSION` (`engine_api.py`) | 1.32.0 |
+| `versionName` (`app/build.gradle.kts`) | 1.32 |
+| `versionCode` | 33 |
 | `applicationId` | `by.betcity.predictor` |
 | `compileSdk` / `targetSdk` | 34 / 34 |
 | `minSdk` | 24 |
@@ -16,7 +16,7 @@
 | Android Gradle Plugin | 8.5.2 |
 | Gradle | 8.7+ (внешний; проверено на 8.9) |
 
-APK: `../Predictor-1.31.apk` относительно корня проекта.
+APK: `../Predictor-1.32.apk` относительно корня проекта.
 
 Размер: 39 503 617 байт; SHA-256: `29492aa69d3c6206810c7a17b79d67aed3fd053d20cf9acc1e78cd074d0a3f84`.
 
@@ -84,16 +84,16 @@ gradle --no-daemon assembleRelease
 ## 5. Копирование и проверка
 
 ```powershell
-Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.31.apk -Force
+Copy-Item app\build\outputs\apk\debug\app-debug.apk ..\Predictor-1.32.apk -Force
 
-C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.31.apk
-C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.31.apk
+C:\Android\build-tools\34.0.0\apksigner.bat verify --print-certs ..\Predictor-1.32.apk
+C:\Android\build-tools\34.0.0\aapt2.exe dump badging ..\Predictor-1.32.apk
 ```
 
 Ожидаемые метаданные:
 
 ```text
-package: name='by.betcity.predictor' versionCode='32' versionName='1.31'
+package: name='by.betcity.predictor' versionCode='33' versionName='1.32'
 sdkVersion:'24'
 targetSdkVersion:'34'
 native-code: 'arm64-v8a' 'x86_64'
@@ -102,13 +102,13 @@ native-code: 'arm64-v8a' 'x86_64'
 Проверка содержимого:
 
 ```powershell
-python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.31.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
+python -c "import zipfile; z=zipfile.ZipFile(r'..\Predictor-1.32.apk'); names=z.namelist(); print('app.js' if 'assets/www/app.js' in names else 'NO app.js'); print('docs.js' if 'assets/www/docs.js' in names else 'NO docs.js'); print('app.imy' if 'assets/chaquopy/app.imy' in names else 'NO app.imy')"
 ```
 
 `assets/chaquopy/app.imy` — zip с Python-модулями. Chaquopy 17 кладёт
 исходники `.py` (не `.pyc`): проверьте `sports.py`, `constructor_engine.py`,
 `analyzer.py`, `predictor_core.py`, `engine_api.py`, `rule_advisor.py`.
-Строка `1.31.0` должна присутствовать в `engine_api.py`.
+Строка `1.32.0` должна присутствовать в `engine_api.py`.
 
 Подпись текущей сборки (debug, Linux-машина):
 
@@ -233,7 +233,7 @@ python tools/check_live.py --base https://predictor.alwaysdata.net
 ## 7. Установка
 
 ```powershell
-adb install -r ..\Predictor-1.31.apk
+adb install -r ..\Predictor-1.32.apk
 ```
 
 `-r` сохраняет данные приложения. Не используйте `-r -d` без необходимости.
