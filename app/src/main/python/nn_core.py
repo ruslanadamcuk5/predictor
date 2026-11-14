@@ -1174,6 +1174,58 @@ def evaluate_hybrid(model, rows, heads):
     return _metrics_from_probs(samples, heads)
 
 
+def match_metrics(sport, model, rows):
+    """Точность по матчам, а не по отдельным партиям.
+
+    Настольный теннис даёт несколько строк на матч (по партии). Решение
+    по матчу — сумма вероятностей П1 по партиям против половины: так
+    видно, использует ли модель счёт матча целиком, а не только отдельную
+    партию. Для остальных видов матч обычно совпадает со строкой, поэтому
+    метрика совпадает с точностью победителя и ничего не искажает.
+    """
+    groups = {}
+    for index, row in enumerate(rows or []):
+        key = row.get("g")
+        if key is None:
+            key = "row:%d" % index
+        groups.setdefault(key, []).append(row)
+    if not groups:
+        return {}
+    sport = sports.normalize_sport(sport)
+    correct = total = p1_wins = 0
+    odds_correct = odds_total = 0
+    for items in groups.values():
+        wins = sum(1 for row in items
+                   if float((row.get("y") or [0.0])[0]) >= 0.5)
+        losses = len(items) - wins
+        if wins == losses:
+            continue
+        truth = wins > losses
+        total += 1
+        p1_wins += 1 if truth else 0
+        p1_sum = sum(
+            float(predict_probs(model, row.get("x") or []).get("p1") or 0.0)
+            for row in items)
+        if (p1_sum >= len(items) / 2.0) == truth:
+            correct += 1
+        if sport == "table_tennis":
+            x = items[0].get("x") or []
+            if len(x) > 21:
+                odds_total += 1
+                if (float(x[20]) >= float(x[21])) == truth:
+                    odds_correct += 1
+    if not total:
+        return {}
+    result = {
+        "match_accuracy": correct / float(total),
+        "match_baseline": max(p1_wins, total - p1_wins) / float(total),
+        "match_samples": total,
+    }
+    if odds_total:
+        result["match_odds_accuracy"] = odds_correct / float(odds_total)
+    return result
+
+
 def _best_temperature(samples, bounds=None, steps=60):
     """Температура, минимизирующая logloss на готовых логитах."""
     if not samples:
@@ -2078,6 +2130,10 @@ def train_model(sport, rows, previous=None, epochs=12, lr=0.05, hidden=None,
             kind: (data.get("meta") or {})
             for kind, data in (state.get("market_models") or {}).items()},
     }
+    # Точность по матчам — отдельная метрика: партии одного матча
+    # собираются в один исход. По ней видно, использует ли модель счёт
+    # матча целиком, а не только отдельную партию.
+    state["meta"].update(match_metrics(sport, state, val_rows))
     # Диагностика строится по уже собранной meta: так она видит и
     # специалистов, и запасную логику голов.
     state["meta"]["market_report"] = market_report(state["meta"], sport)

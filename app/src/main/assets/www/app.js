@@ -617,6 +617,12 @@ function renderNeural(status) {
           `(база ${baseline}%, ${lift >= 0 ? '+' : ''}${lift} п.п.)`
         : `${num(item.pending)} ждут результата`;
       if (item.samples && winner) meta += ` · исход ${winner}%`;
+      if (item.samples && item.match_accuracy) {
+        meta += ` · матчи ${Math.round(item.match_accuracy * 100)}%`;
+        if (item.match_odds_accuracy) {
+          meta += ` (линия ${Math.round(item.match_odds_accuracy * 100)}%)`;
+        }
+      }
       if (item.samples) {
         const labels = s.market_labels || {};
         const readyMarkets = Array.isArray(item.markets_ready)
@@ -641,6 +647,16 @@ function renderNeural(status) {
       }).join('') : '';
       const marks = [];
       if (item.plateau) marks.push('<span class="tag warn">плато</span>');
+      if (item.trained_at) {
+        marks.push('<span class="muted nn-trained">обучено ' +
+          esc(fmtDateTime(item.trained_at)) + '</span>');
+      }
+      const busy = !!(item.training ||
+        (s.training && (!s.training_sport || s.training_sport === item.sport)));
+      marks.push('<button class="btn btn-ghost btn-sm" data-nn-train="' +
+        esc(item.sport || '') + '" title="Полностью обучить этот вид"' +
+        (busy ? ' disabled' : '') + '>' +
+        (busy ? 'Обучается…' : 'Обучить') + '</button>');
       if (item.has_backup) {
         marks.push('<button class="btn btn-ghost btn-sm" data-nn-rollback="' +
           esc(item.sport || '') + '" title="Вернуть предыдущую модель">↩︎ откат</button>');
@@ -729,6 +745,25 @@ function bindNeural() {
   const list = $('nnSports');
   if (list) {
     list.addEventListener('click', e => {
+      const trainBtn = e.target.closest('[data-nn-train]');
+      if (trainBtn) {
+        const sport = trainBtn.dataset.nnTrain;
+        const name = sportName(sport);
+        loader(true);
+        try {
+          const res = call('neural',
+            JSON.stringify({ action: 'train_sport', sport }));
+          if (res && res.ok) {
+            if (res.status) renderNeural(res.status);
+            toast('Обучение «' + name + '» запущено: полный цикл в фоне', 'ok');
+          } else if (res && res.error) {
+            toast('Ошибка: ' + res.error, 'error');
+          }
+        } finally {
+          loader(false);
+        }
+        return;
+      }
       const btn = e.target.closest('[data-nn-rollback]');
       if (!btn) return;
       const sport = btn.dataset.nnRollback;

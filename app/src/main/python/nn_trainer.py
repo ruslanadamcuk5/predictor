@@ -97,7 +97,9 @@ class NeuralTrainer:
         self._archived = 0           # строк в nn_archive.jsonl
         self._train_flag = False
         self._train_force = False
+        self._train_only = None      # ручное обучение одного вида
         self._training = False
+        self._training_sport = ""
         self._last_train_at = ""
         self._dropped = 0            # устаревшее поле статуса (совместимость)
         self._plateau_skip = {}      # спорт -> сколько примеров при плато
@@ -797,11 +799,13 @@ class NeuralTrainer:
             return "down"
         return "flat"
 
-    def request_train(self, force=False):
+    def request_train(self, force=False, only=None):
         with self._lock:
             self._train_flag = True
             if force:
                 self._train_force = True
+            if only:
+                self._train_only = sports.normalize_sport(only)
         self._ensure_thread()
         return True
 
@@ -820,10 +824,12 @@ class NeuralTrainer:
                 with self._lock:
                     flag = self._train_flag
                     force = self._train_force
+                    only = self._train_only
                     self._train_flag = False
                     self._train_force = False
+                    self._train_only = None
                 if flag:
-                    self.train_all(force=force)
+                    self.train_all(force=force, only=only)
                     waited = 0.0
                 else:
                     waited += 1.0
@@ -848,8 +854,12 @@ class NeuralTrainer:
         need = max(5, int(trained_on * PLATEAU_NEW_SHARE))
         return max(0, need - int(new_rows or 0))
 
-    def train_all(self, force=False):
+    def train_all(self, force=False, only=None):
         """Обучает модели по видам спорта, где хватает примеров.
+
+        only — обучать только один вид (кнопка «Обучить» у вида). Ручное
+        обучение идёт полными epochs, не упирается в плато и не ждёт
+        накопления примеров; защита победителя при этом остаётся.
 
         Защита от переобучения:
           - «оставлять лучшую модель» — новая модель принимается, только если
@@ -863,6 +873,13 @@ class NeuralTrainer:
         min_samples = cfg["min_samples"]
         trained = []
         rejected = []
+        manual = bool(only)
+        if manual:
+            # Явная кнопка у вида: обучаем именно его, даже если он не
+            # выбран в общем списке — выбор пользователя важнее.
+            targets = [sports.normalize_sport(only)]
+        else:
+            targets = list(cfg["sports"])
         if cfg["freeze"] and not force:
             self._log("Нейросеть: обучение заморожено, автоматическое "
                       "дообучение отключено")
@@ -876,8 +893,9 @@ class NeuralTrainer:
                 pass
         with self._lock:
             self._training = True
+            self._training_sport = targets[0] if manual else ""
         try:
-            for sport in cfg["sports"]:
+            for sport in targets:
                 with self._lock:
                     rows = list(self._samples.get(sport) or [])
                     previous = self._models.get(sport)
@@ -920,7 +938,7 @@ class NeuralTrainer:
                             self._log("Нейросеть: %s — резервная копия "
                                       "точнее по победителю, обучаем от неё"
                                       % sports.short_name(sport))
-                if previous and not force and not needs_recoverage:
+                if previous and not force and not needs_recoverage and not manual:
                     trained_on = int(meta.get("samples") or 0)
                     new_rows = max(0, len(rows) - trained_on)
                     if trained_on and new_rows < 5:
@@ -942,7 +960,7 @@ class NeuralTrainer:
                     model, report = nn_core.train_model(
                         sport, rows, previous=base_model,
                         epochs=cfg["epochs"]
-                        if (base_model is None or needs_recoverage)
+                        if (manual or base_model is None or needs_recoverage)
                         else cfg["finetune_epochs"],
                         lr=cfg["learning_rate"],
                         l2=cfg["l2"],
@@ -1016,6 +1034,7 @@ class NeuralTrainer:
         finally:
             with self._lock:
                 self._training = False
+                self._training_sport = ""
         if trained or rejected:
             with self._lock:
                 self._last_train_at = _now()
@@ -1391,6 +1410,14 @@ class NeuralTrainer:
                         "В ожидании разметки ещё %d." % pending_count)
             else:
                 hint = "Данных достаточно, обучение запустится в фоне."
+            if sport == "table_tennis" and model and meta.get("match_accuracy"):
+                note = " По матчам — %.0f%%" % (
+                    float(meta.get("match_accuracy") or 0.0) * 100.0)
+                if meta.get("match_odds_accuracy"):
+                    note += " (линия %.0f%%)" % (
+                        float(meta.get("match_odds_accuracy") or 0.0) * 100.0)
+                hint += note + (": точность по партиям уже упирается в "
+                                "линию букмекера.")
             sports_info.append({
                 "sport": sport,
                 "name": sports.name(sport),
@@ -1407,6 +1434,14 @@ class NeuralTrainer:
                 "winner_accuracy": float(meta.get("winner_accuracy") or 0.0),
                 "winner_baseline": float(meta.get("winner_baseline") or 0.0),
                 "winner_samples": int(meta.get("winner_samples") or 0),
+                "match_accuracy": float(meta.get("match_accuracy") or 0.0),
+                "match_baseline": float(meta.get("match_baseline") or 0.0),
+                "match_odds_accuracy": float(
+                    meta.get("match_odds_accuracy") or 0.0),
+                "match_samples": int(meta.get("match_samples") or 0),
+                "training": bool(self._training) and (
+                    not self._training_sport or
+                    self._training_sport == sport),
                 "feature_version": int(meta.get("feature_version") or 0),
                 "head_source": dict(meta.get("head_source") or {}),
                 "val_samples": int(meta.get("val_samples") or 0),
@@ -1487,6 +1522,8 @@ class NeuralTrainer:
             "sports_selected": list(selected),
             "market_labels": nn_core.MARKET_LABELS,
             "total_samples": total_samples,
+            "training": bool(self._training),
+            "training_sport": self._training_sport,
             "pending": len(pending),
             "archived": self._archived,
             "dropped": self._dropped,

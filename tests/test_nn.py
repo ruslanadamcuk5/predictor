@@ -453,6 +453,24 @@ if trainer._backups.get("football"):
     check("после отката модель вернулась",
           trainer._accuracy(trainer._models.get("football")) != before or True)
 
+# --- обучение одного вида и дата последнего обучения ----------------------
+status = trainer.status()
+football_status = [item for item in status["sports"]
+                   if item["sport"] == "football"][0]
+check("в статусе есть дата последнего обучения",
+      bool(football_status.get("trained_at")), football_status)
+check("в статусе есть точность по матчам",
+      "match_accuracy" in football_status and
+      "match_samples" in football_status, football_status)
+check("в статусе есть флаг обучения вида",
+      football_status.get("training") is False, football_status)
+
+trained = trainer.train_all(force=True, only="football")
+check("обучение одного вида не трогает остальные",
+      trained in ([], ["football"]), trained)
+res = json.loads(api.api_neural(json.dumps({"action": "train_sport"})))
+check("train_sport без вида — ошибка", res.get("ok") is False, res)
+
 # --- заморозка обучения ----------------------------------------------------
 eng.settings.update({"neural": {"freeze": True}})
 trained = trainer.train_all(force=False)
@@ -583,6 +601,27 @@ check("группы не пересекаются", not (train_groups & val_grou
       (train_groups, val_groups))
 check("проверка не пустая", len(val_rows) >= 1, len(val_rows))
 check("проверка — свежие матчи", "m3" in val_groups, val_groups)
+
+match_rows = [
+    {"x": [1.0], "y": [1.0], "m": [1.0], "g": "a"},
+    {"x": [1.0], "y": [1.0], "m": [1.0], "g": "a"},
+    {"x": [0.0], "y": [0.0], "m": [1.0], "g": "b"},
+    {"x": [0.0], "y": [0.0], "m": [1.0], "g": "b"},
+]
+_orig_probs = nn_core.predict_probs
+nn_core.predict_probs = lambda model, features: {
+    "p1": 0.8 if features and features[0] else 0.2}
+try:
+    match_metrics = nn_core.match_metrics("football", {}, match_rows)
+finally:
+    nn_core.predict_probs = _orig_probs
+check("точность по матчам собирает партии в один исход",
+      match_metrics.get("match_samples") == 2 and
+      abs(match_metrics.get("match_accuracy") - 1.0) < 1e-9,
+      match_metrics)
+check("база по матчам считается по исходам",
+      abs(match_metrics.get("match_baseline") - 0.5) < 1e-9,
+      match_metrics)
 
 metrics = nn_core.evaluate_previous("football", trainer._models.get("football"),
                                     trainer._samples.get("football") or [])

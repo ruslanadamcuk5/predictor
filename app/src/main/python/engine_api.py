@@ -25,7 +25,7 @@ import online_client
 import rule_advisor
 import sports
 
-APP_VERSION = "1.32.0"
+APP_VERSION = "1.33.0"
 # Как часто движок пересобирает авто-правила (секунды).
 AUTO_RULES_INTERVAL = 180
 
@@ -598,6 +598,25 @@ class Engine:
         elif action in ("disable", "off"):
             self.settings.update({"neural": {"enabled": False}})
             core.events.add("INFO", "Нейросеть: прогнозы по сети выключены")
+        elif action in ("train_sport", "sport_train"):
+            if not str(options.get("sport") or "").strip():
+                return self._json({"ok": False,
+                                   "error": "Не указан вид спорта"})
+            sport = sports.normalize_sport(options.get("sport"))
+            check = trainer.status()
+            info = next((item for item in check.get("sports") or []
+                         if item.get("sport") == sport), None)
+            if not info or int(info.get("samples") or 0) < int(
+                    check.get("min_samples") or 0):
+                return self._json({
+                    "ok": False,
+                    "error": "Мало примеров: нужно не меньше %d" %
+                             int(check.get("min_samples") or 0),
+                    "status": check})
+            trainer.request_train(force=True, only=sport)
+            core.events.add(
+                "INFO", "Нейросеть: обучение вида «%s» запущено в фоне" %
+                sports.short_name(sport))
         elif action in ("train", "run", "update"):
             trainer.train_now(force=True)
             core.events.add("INFO", "Нейросеть: обучение запущено в фоне")
