@@ -469,12 +469,13 @@ trained = trainer.train_all(force=True, only="football")
 check("обучение одного вида не трогает остальные",
       trained in ([], ["football"]), trained)
 _orig_train_model = nn_core.train_model
-_manual_calls = {}
+_manual_calls = []
 
 
 def _spy_train_model(sport, rows, previous=None, **kwargs):
-    _manual_calls["previous"] = previous
-    _manual_calls["epochs"] = kwargs.get("epochs")
+    _manual_calls.append({"previous": previous,
+                          "epochs": kwargs.get("epochs"),
+                          "seed": kwargs.get("seed")})
     return _orig_train_model(sport, rows, previous=previous, **kwargs)
 
 
@@ -484,10 +485,30 @@ try:
 finally:
     nn_core.train_model = _orig_train_model
 check("ручное обучение начинает с нуля",
-      _manual_calls.get("previous") is None, _manual_calls)
+      bool(_manual_calls) and
+      all(call["previous"] is None for call in _manual_calls), _manual_calls)
 check("ручное обучение берёт полные epochs",
-      _manual_calls.get("epochs") == trainer.config()["epochs"],
+      all(call["epochs"] == trainer.config()["epochs"]
+          for call in _manual_calls), _manual_calls)
+check("ручное обучение перебирает seed'ы",
+      nn_trainer.MANUAL_SEEDS >= 2 and
+      [call["seed"] for call in _manual_calls] ==
+      [trainer.config()["seed"] + index
+       for index in range(len(_manual_calls))] and
+      len(_manual_calls) == len({call["seed"] for call in _manual_calls}),
       _manual_calls)
+check("перебор берёт запуск с лучшим победителем",
+      nn_trainer.NeuralTrainer._better_candidate(
+          {"winner_accuracy": 0.58, "accuracy": 0.55},
+          {"winner_accuracy": 0.57, "accuracy": 0.60}) is True)
+check("перебор не берёт запуск с худшим победителем",
+      nn_trainer.NeuralTrainer._better_candidate(
+          {"winner_accuracy": 0.56, "accuracy": 0.70},
+          {"winner_accuracy": 0.57, "accuracy": 0.60}) is False)
+check("при равном победителе решает общая точность",
+      nn_trainer.NeuralTrainer._better_candidate(
+          {"winner_accuracy": 0.57, "accuracy": 0.61},
+          {"winner_accuracy": 0.57, "accuracy": 0.60}) is True)
 res = json.loads(api.api_neural(json.dumps({"action": "train_sport"})))
 check("train_sport без вида — ошибка", res.get("ok") is False, res)
 

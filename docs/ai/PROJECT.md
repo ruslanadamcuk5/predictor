@@ -112,13 +112,13 @@ Live-линия всех видов: команды, счёт, коэффици�
 | Архитектуры | arm64-v8a, x86_64 |
 | Подпись | debug или release по `PREDICTOR_KEYSTORE` |
 | Размер APK | 39 538 276 байт (37,7 МБ) |
-| SHA-256 | `57a4458264687bd16b9ee81067a8eb12a55ac148cedbfac0e321ba5af545d21f` |
+| SHA-256 | `7322b304af4c1eeb6a037bfc6545cc5a9b201f43af3ba8df496d9631db5dea3d` |
 
 Состояние на 15.11.2026: офлайн-регрессии (26 наборов), `test_engine_core.py`
 (47), `test_profit.py` (116), `test_auto_rules.py` (62),
 `test_recommendations.py` (85), `test_ai.py` (92), `test_ui_settings.py` (14),
 `test_history_server.py` (89), `test_online_server.py` (79),
-`test_release_tool.py` (20), `test_live_tool.py` (6), `test_nn.py` (223),
+`test_release_tool.py` (20), `test_live_tool.py` (6), `test_nn.py` (227),
 `test_nn_params.py` (35) и `test_score_results.py` (47) проходят.
 APK 1.34 собран (Chaquopy 17.1.0,
 Python 3.13, arm64-v8a/x86_64), подписан тем же debug-ключом, что и 1.17,

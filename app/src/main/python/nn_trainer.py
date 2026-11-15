@@ -43,6 +43,7 @@ TRAIN_INTERVAL = 120          # секунд между проверками о�
 PLATEAU_ROUNDS = 3            # раундов без роста точности — остановка
 PLATEAU_NEW_SHARE = 0.25      # доля новых примеров, чтобы попробовать снова
 IMPROVE_EPS = 0.005           # минимальный прирост точности, чтобы считать улучшением
+MANUAL_SEEDS = 3              # запусков перебора при обучении вида по кнопке
 HISTORY_LIMIT = 30            # сколько точек истории храним по виду
 
 
@@ -751,6 +752,14 @@ class NeuralTrainer:
             return True
         return float(new_accuracy) >= float(old_accuracy) - IMPROVE_EPS
 
+    @staticmethod
+    def _better_candidate(new_meta, best_meta):
+        """Лучший запуск перебора: сначала победитель, потом общая точность."""
+        def rank(meta):
+            return (float(meta.get("winner_accuracy") or 0.0),
+                    float(meta.get("accuracy") or 0.0))
+        return rank(new_meta or {}) > rank(best_meta or {})
+
     @classmethod
     def _keeps_winner(cls, new_meta, old_metrics, keep_best):
         """Не ухудшает ли новая модель рынок победителя.
@@ -960,6 +969,14 @@ class NeuralTrainer:
                         self._log("Нейросеть: %s — плато, пробуем заново на "
                                   "новых данных (+%d примеров)" %
                                   (sports.short_name(sport), new_rows))
+                # Прежнюю модель проверяем заранее: её точность на той же
+                # отложенной выборке нужна и для выбора лучшего запуска,
+                # и для защиты от ухудшения после обучения.
+                old_metrics = None
+                if previous:
+                    old_metrics = nn_core.evaluate_previous(
+                        sport, previous, rows,
+                        share=cfg["validation_share"])
                 try:
                     # Ручная кнопка вида — это полное обучение с нуля, а не
                     # продолжение прежних весов: иначе «полный цикл» так и
@@ -967,20 +984,56 @@ class NeuralTrainer:
                     # оптимума. Прежняя модель всё равно сравнивается на
                     # той же проверке и остаётся, если новая хуже.
                     train_previous = None if manual else base_model
-                    model, report = nn_core.train_model(
-                        sport, rows, previous=train_previous,
-                        epochs=cfg["epochs"]
-                        if (manual or base_model is None or needs_recoverage)
-                        else cfg["finetune_epochs"],
-                        lr=cfg["learning_rate"],
-                        l2=cfg["l2"],
-                        momentum=cfg["momentum"],
-                        batch_size=cfg["batch_size"],
-                        validation_share=cfg["validation_share"],
-                        seed=cfg["seed"],
-                        hidden_layers=cfg["hidden_layers"],
-                        activation=cfg["activation"],
-                        pause=self._pause)
+                    epochs = (cfg["epochs"]
+                              if (manual or base_model is None or needs_recoverage)
+                              else cfg["finetune_epochs"])
+                    # Один запуск с нуля — это лотерея инициализации: на
+                    # 12 860 строках настольного тенниса разные seed'ы дают
+                    # от 57.2% до 58.6% при одинаковых данных. Кнопка вида
+                    # поэтому делает несколько запусков и оставляет лучший
+                    # по проверке, а не первый попавшийся.
+                    seeds = ([cfg["seed"] + offset
+                              for offset in range(MANUAL_SEEDS)]
+                             if manual else [cfg["seed"]])
+                    old_winner = float(
+                        (old_metrics or {}).get("winner_accuracy") or 0.0)
+                    model = None
+                    runs = 0
+                    for seed in seeds:
+                        candidate, _report = nn_core.train_model(
+                            sport, rows, previous=train_previous,
+                            epochs=epochs,
+                            lr=cfg["learning_rate"],
+                            l2=cfg["l2"],
+                            momentum=cfg["momentum"],
+                            batch_size=cfg["batch_size"],
+                            validation_share=cfg["validation_share"],
+                            seed=seed,
+                            hidden_layers=cfg["hidden_layers"],
+                            activation=cfg["activation"],
+                            pause=self._pause)
+                        if not candidate:
+                            continue
+                        runs += 1
+                        if model is None or self._better_candidate(
+                                candidate.get("meta") or {},
+                                model.get("meta") or {}):
+                            model = candidate
+                        if (old_metrics and float(
+                                (candidate.get("meta") or {}).get(
+                                    "winner_accuracy") or 0.0)
+                                > old_winner + IMPROVE_EPS):
+                            # Дальше перебирать незачем: цель уже достигнута.
+                            break
+                        if self._stop.is_set():
+                            break
+                    if manual and runs > 1:
+                        best_meta = (model or {}).get("meta") or {}
+                        self._log("Нейросеть: %s — перебор %d запусков, "
+                                  "лучший победитель %.1f%%" %
+                                  (sports.short_name(sport), runs,
+                                   100.0 * float(
+                                       best_meta.get("winner_accuracy") or 0.0)))
                 except Exception as exc:
                     self._log("Нейросеть: обучение %s не удалось: %s" %
                               (sports.short_name(sport), exc))
@@ -990,10 +1043,7 @@ class NeuralTrainer:
                 new_meta = model.setdefault("meta", {})
                 new_meta["updated_at"] = _now()
                 new_accuracy = float(new_meta.get("accuracy") or 0.0)
-                # Прежнюю модель проверяем на ТОЙ ЖЕ отложенной выборке.
-                old_metrics = nn_core.evaluate_previous(
-                    sport, previous, rows,
-                    share=cfg["validation_share"])
+                # Прежнюю модель проверяли на ТОЙ ЖЕ отложенной выборке.
                 old_accuracy = float(old_metrics.get("accuracy")) \
                     if old_metrics else None
                 # Модель без покрытия по головам или обученная по старой
