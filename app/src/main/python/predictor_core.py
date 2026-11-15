@@ -1733,7 +1733,10 @@ class ResultChecker:
         previous = pred_data.get("sets_completed", 0)
         p1 = sum(1 for s in completed if s["p1"] > s["p2"])
         p2 = sum(1 for s in completed if s["p2"] > s["p1"])
-        match_over = p1 >= 4 or p2 >= 4
+        # Настольный теннис — обычно best-of-5: три победы уже решают
+        # матч. Отметка «событие завершено» надёжнее для редкого
+        # best-of-7, поэтому она тоже включает проверку матчевых прогнозов.
+        match_over = finished_seen or p1 >= 3 or p2 >= 3
 
         # --- партии: обычные прогнозы ---
         for pred in pred_data.get("predictions") or []:
@@ -2592,7 +2595,9 @@ class PredictorEnsemble:
                     wins1 += 1
                 elif p2 > p1:
                     wins2 += 1
-            return wins1 >= 4 or wins2 >= 4
+            # Настольный теннис: обычно до 3 побед (best-of-5), иногда
+            # до 4 (best-of-7). Оба варианта — завершённый матч.
+            return wins1 >= 3 or wins2 >= 3
         return False
 
     def _remember_scores(self, feed, force_save=False):

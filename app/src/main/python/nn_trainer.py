@@ -637,7 +637,11 @@ class NeuralTrainer:
         high = max(int(parsed["match"][0]), int(parsed["match"][1]))
         low = min(int(parsed["match"][0]), int(parsed["match"][1]))
         if sport == "table_tennis":
-            return high == 4 and low <= 3
+            # best-of-5 (3 победы) — основной формат, best-of-7 (4) —
+            # редкий. Счёт без завершённых партий сюда не попадает:
+            # parse_score считает только доигранные партии.
+            return ((high == 3 and low <= 2) or
+                    (high == 4 and low <= 3))
         if sport == "volleyball":
             return high == 3 and low <= 2
         if sport == "tennis":
@@ -919,7 +923,7 @@ class NeuralTrainer:
                 # просадку: сравнивать новую модель не с чем, кроме уже
                 # испорченной.
                 base_model = previous
-                if needs_recoverage and previous:
+                if needs_recoverage and previous and not manual:
                     backup = self._backups.get(sport)
                     if backup:
                         current_check = nn_core.evaluate_previous(
@@ -957,8 +961,14 @@ class NeuralTrainer:
                                   "новых данных (+%d примеров)" %
                                   (sports.short_name(sport), new_rows))
                 try:
+                    # Ручная кнопка вида — это полное обучение с нуля, а не
+                    # продолжение прежних весов: иначе «полный цикл» так и
+                    # остаётся дообучением и не может выйти из старого
+                    # оптимума. Прежняя модель всё равно сравнивается на
+                    # той же проверке и остаётся, если новая хуже.
+                    train_previous = None if manual else base_model
                     model, report = nn_core.train_model(
-                        sport, rows, previous=base_model,
+                        sport, rows, previous=train_previous,
                         epochs=cfg["epochs"]
                         if (manual or base_model is None or needs_recoverage)
                         else cfg["finetune_epochs"],
@@ -996,6 +1006,8 @@ class NeuralTrainer:
                     not isinstance(old_meta.get("head_train_samples"), dict) or
                     _revision(old_meta) < nn_core.TRAIN_REVISION)
                 history = self._history(previous)
+                new_meta["checked_at"] = new_meta["updated_at"]
+                new_meta["last_result"] = "accepted"
                 entry = {
                     "at": new_meta["updated_at"],
                     "accuracy": round(new_accuracy, 4),
@@ -1008,6 +1020,7 @@ class NeuralTrainer:
                     "old_on_val": round(old_accuracy, 4)
                     if old_accuracy is not None else None,
                     "rejected": False,
+                    "manual": manual,
                 }
                 if (old_accuracy is not None and previous and
                         not needs_recoverage and
@@ -1017,6 +1030,9 @@ class NeuralTrainer:
                     entry["rejected"] = True
                     entry["previous_accuracy"] = round(old_accuracy, 4)
                     previous["history"] = (history + [entry])[-HISTORY_LIMIT:]
+                    previous_meta = previous.setdefault("meta", {})
+                    previous_meta["checked_at"] = entry["at"]
+                    previous_meta["last_result"] = "rejected"
                     with self._lock:
                         self._models[sport] = previous
                     rejected.append(sport)
@@ -1104,6 +1120,39 @@ class NeuralTrainer:
         return {kind: self._market_ready(model, sport, kind)
                 for kind in (markets or [])}
 
+    @staticmethod
+    def _tt_sets_to_win(match):
+        """Сколько партий нужно выиграть в этом матче (по умолчанию 3)."""
+        text = ("%s %s" % ((match or {}).get("league") or "",
+                           (match or {}).get("date") or "")).lower()
+        if "до 2" in text or "best of 3" in text:
+            return 2
+        if "до 4" in text or "best of 7" in text:
+            return 4
+        return 3
+
+    @staticmethod
+    def _tt_match_probability(p1, need=3):
+        """Вероятность выиграть матч по вероятности выиграть партию.
+
+        Модель даёт одну и ту же вероятность на каждую партию. Матч —
+        это серия до ``need`` побед, поэтому вероятность выиграть его
+        считается биномиальным хвостом. Это не новая модель, а честная
+        агрегация той же вероятности: решение остаётся прежним, но
+        уверенность соответствует исходу матча, а не одной партии.
+        """
+        try:
+            p1 = max(0.0, min(1.0, float(p1)))
+            need = max(1, min(4, int(need)))
+        except (TypeError, ValueError):
+            return 0.5
+        total = 2 * need - 1
+        probability = 0.0
+        for wins in range(need, total + 1):
+            probability += (math.comb(total, wins) *
+                            (p1 ** wins) * ((1.0 - p1) ** (total - wins)))
+        return max(0.0, min(1.0, probability))
+
     def predict(self, match, stats, sport, features=None, meta=None):
         """Прогнозы нейросети по матчу (пустой список, если не готова)."""
         sport = sports.normalize_sport(sport)
@@ -1141,6 +1190,11 @@ class NeuralTrainer:
         accuracy = float(meta_model.get("accuracy") or 0.0)
         samples = int(meta_model.get("samples") or 0)
         base_info = "Нейросеть: %d примеров, точность %.0f%%" % (samples, accuracy * 100)
+        if sport == "table_tennis" and meta_model.get("match_accuracy"):
+            base_info = ("Нейросеть: %d примеров, партии %.0f%%, матчи %.0f%%"
+                         % (samples, accuracy * 100.0,
+                            float(meta_model.get("match_accuracy") or 0.0)
+                            * 100.0))
         predictions = []
 
         def make(target, label, kind, side, verdict, confidence, threshold=None,
@@ -1166,10 +1220,27 @@ class NeuralTrainer:
         if sport == "table_tennis":
             if not markets:
                 return predictions
-            for number in range(1, cfg["sets"] + 1):
-                for item in self._predict_set(probs, number, min_conf, markets,
-                                              line, ready):
-                    predictions.append(item)
+            # Победитель настольного тенниса — это матч, а не отдельная
+            # партия. Партийный прогноз повторял один и тот же ответ на
+            # все партии и на длинных матчах выглядел хуже, чем есть:
+            # по матчам модель точнее. Поэтому победитель считается один
+            # раз на матч, а по партиям остаются только тоталы.
+            set_markets = [kind for kind in markets if kind != "winner"]
+            if set_markets:
+                for number in range(1, cfg["sets"] + 1):
+                    for item in self._predict_set(probs, number, min_conf,
+                                                  set_markets, line, ready):
+                        predictions.append(item)
+            if ready.get("winner"):
+                need = self._tt_sets_to_win(match)
+                match_p1 = self._tt_match_probability(
+                    probs.get("p1") or 0.0, need)
+                confidence = max(match_p1, 1.0 - match_p1)
+                if confidence >= min_conf:
+                    side = "П1" if match_p1 >= 0.5 else "П2"
+                    predictions.append(make(
+                        "match", "Матч (П1 / П2)", "winner", side, side,
+                        confidence))
             return predictions
 
         # ---- командные виды: победитель ----
@@ -1236,7 +1307,8 @@ class NeuralTrainer:
         ready = ready or {kind: True for kind in markets}
         p1 = probs.get("p1", 0.0)
         p2 = probs.get("p2", 0.0)
-        if ready.get("winner") and max(p1, p2) >= min_conf:
+        if "winner" in markets and ready.get("winner") \
+                and max(p1, p2) >= min_conf:
             side = "П1" if p1 >= p2 else "П2"
             rows.append({
                 "target": "set%d" % number,
@@ -1252,7 +1324,7 @@ class NeuralTrainer:
                 "models_info": "Нейросеть: партия %d" % number,
                 "source": "neural",
             })
-        if ready.get("total"):
+        if "total" in markets and ready.get("total"):
             over = probs.get("over")
             if over is not None:
                 threshold = float(nn_core.tt_line(line))
@@ -1418,6 +1490,9 @@ class NeuralTrainer:
                         float(meta.get("match_odds_accuracy") or 0.0) * 100.0)
                 hint += note + (": точность по партиям уже упирается в "
                                 "линию букмекера.")
+            if model and meta.get("last_result") == "rejected":
+                hint += (" Последняя проверка не дала прироста — оставлена "
+                         "прежняя модель.")
             sports_info.append({
                 "sport": sport,
                 "name": sports.name(sport),
@@ -1451,6 +1526,9 @@ class NeuralTrainer:
                 "activation": meta.get("activation") or "",
                 "finetuned": bool(meta.get("finetuned")),
                 "trained_at": meta.get("updated_at") or "",
+                "checked_at": meta.get("checked_at") or
+                meta.get("updated_at") or "",
+                "last_result": meta.get("last_result") or "",
                 "selected": sport in selected,
                 "markets": nn_core.market_kinds(sport),
                 "markets_enabled": self.markets_for(sport),
@@ -1468,7 +1546,8 @@ class NeuralTrainer:
                      "val_samples": int(item.get("val_samples") or 0),
                      "winner_accuracy": float(item.get("winner_accuracy") or 0.0),
                      "old_on_val": item.get("old_on_val"),
-                     "rejected": bool(item.get("rejected"))}
+                     "rejected": bool(item.get("rejected")),
+                     "manual": bool(item.get("manual"))}
                     for item in history[-12:]
                 ],
                 "trend": self._trend(history),

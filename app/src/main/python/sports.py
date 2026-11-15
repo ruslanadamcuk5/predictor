@@ -449,8 +449,14 @@ def parse_score(sport, text):
             points = (sum(a for a, _b in periods),
                       sum(b for _a, b in periods))
             total = sum(a + b for a, b in periods)
-            match = (sum(1 for a, b in periods if a > b),
-                     sum(1 for a, b in periods if b > a))
+            # Партия засчитывается только доигранной: иначе середина
+            # третьей партии («10:7») превращается в третью победу и
+            # недоделанный матч выглядит финальным.
+            match = (
+                sum(1 for a, b in periods
+                    if a > b and _period_complete(sport, (a, b))),
+                sum(1 for a, b in periods
+                    if b > a and _period_complete(sport, (a, b))))
         sets_won = match
 
     decisive = match
@@ -526,7 +532,9 @@ def score_final(sport, parsed):
     if mode == "sets":
         wins = max(int(parsed["match"][0]), int(parsed["match"][1]))
         if sport == "table_tennis":
-            return wins >= 4
+            # Настольный теннис чаще всего до 3 побед (best-of-5),
+            # реже — до 4 (best-of-7). Оба варианта — финал.
+            return wins >= 3
         if wins < 2 or parsed.get("total") is None:
             return False
         return all(_period_complete(sport, pair)
@@ -557,7 +565,8 @@ def score_decided(sport, parsed):
     high = max(int(parsed["match"][0]), int(parsed["match"][1]))
     low = min(int(parsed["match"][0]), int(parsed["match"][1]))
     if sport == "table_tennis":
-        return high == 4 and low <= 3
+        return ((high == 3 and low <= 2) or
+                (high == 4 and low <= 3))
     if sport == "volleyball":
         # Матч до трёх побед: 0:4 и 4:0 — не финал, а битый счёт.
         return high == 3 and low <= 2

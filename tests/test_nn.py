@@ -468,6 +468,26 @@ check("в статусе есть флаг обучения вида",
 trained = trainer.train_all(force=True, only="football")
 check("обучение одного вида не трогает остальные",
       trained in ([], ["football"]), trained)
+_orig_train_model = nn_core.train_model
+_manual_calls = {}
+
+
+def _spy_train_model(sport, rows, previous=None, **kwargs):
+    _manual_calls["previous"] = previous
+    _manual_calls["epochs"] = kwargs.get("epochs")
+    return _orig_train_model(sport, rows, previous=previous, **kwargs)
+
+
+nn_core.train_model = _spy_train_model
+try:
+    trainer.train_all(force=True, only="football")
+finally:
+    nn_core.train_model = _orig_train_model
+check("ручное обучение начинает с нуля",
+      _manual_calls.get("previous") is None, _manual_calls)
+check("ручное обучение берёт полные epochs",
+      _manual_calls.get("epochs") == trainer.config()["epochs"],
+      _manual_calls)
 res = json.loads(api.api_neural(json.dumps({"action": "train_sport"})))
 check("train_sport без вида — ошибка", res.get("ok") is False, res)
 
@@ -655,6 +675,20 @@ check("счёт 4:2 — финальный",
 check("счёт 2:1 — не финальный",
       nn_trainer.NeuralTrainer._score_complete(
           "table_tennis", "11:5, 9:11, 11:7") is False)
+check("счёт 3:0 — финальный для best-of-5",
+      nn_trainer.NeuralTrainer._score_complete(
+          "table_tennis", "11:6, 11:6, 11:8") is True)
+check("середина третьей партии — не финал",
+      nn_trainer.NeuralTrainer._score_complete(
+          "table_tennis", "11:6, 11:6, 10:7") is False)
+check("счёт 3:1 по партиям — финальный",
+      nn_trainer.NeuralTrainer._score_complete(
+          "table_tennis", "3:1") is True)
+tt_parsed = sports.parse_score("table_tennis", "11:6, 11:6, 11:8")
+check("настольный теннис: 3 победы — решение матча",
+      sports.score_decided("table_tennis", tt_parsed) is True, tt_parsed)
+check("настольный теннис: 3 победы — финальный счёт",
+      sports.score_final("table_tennis", tt_parsed) is True, tt_parsed)
 labeled = fresh.collect_results({})
 check("матч размечен по последнему счёту", labeled == 1, labeled)
 check("выборка пополнилась",
@@ -1095,5 +1129,52 @@ check("при откате остаются прежние веса победи
       all(abs(guard_old_probs[head] - guard_new_probs[head]) < 1e-12
           for head in ("p1", "p2")),
       (guard_old_probs, guard_new_probs))
+
+# --- настольный теннис: победитель считается на матч ----------------------
+eng.settings.update({"neural": {
+    "enabled": True, "min_samples": 10, "min_confidence": 0.55, "sets": 3,
+    "sports": ["table_tennis"],
+    "markets": {"table_tennis": ["winner", "total"]}}})
+tt_trainer = nn_trainer.NeuralTrainer(
+    tempfile.mkdtemp(prefix="nn_tt_"), eng.settings, None)
+tt_trainer._models["table_tennis"] = {"meta": {
+    "samples": 100, "accuracy": 0.5774,
+    "winner_accuracy": 0.60, "winner_baseline": 0.53, "winner_samples": 100,
+    "head_train_samples": {"p1": 100, "p2": 100, "over": 100},
+    "head_accuracy": {"over": 0.60}, "head_baseline": {"over": 0.53},
+    "match_accuracy": 0.6385, "match_odds_accuracy": 0.6401,
+    "ready_markets": ["winner", "total"], "market_models": {},
+}}
+_orig_probs = nn_core.predict_probs
+nn_core.predict_probs = lambda model, features: {
+    "p1": 0.6, "p2": 0.4, "over": 0.55}
+try:
+    tt_preds = tt_trainer.predict(
+        {"league": "Лига", "current_score": "0:0"}, {}, "table_tennis",
+        features=[0.0] * nn_core.feature_size("table_tennis"),
+        meta={"line": 18.5})
+finally:
+    nn_core.predict_probs = _orig_probs
+tt_winners = [item for item in tt_preds if item.get("kind") == "winner"]
+check("теннис: победитель один на матч",
+      len(tt_winners) == 1 and tt_winners[0].get("target") == "match",
+      tt_winners)
+check("теннис: уверенность матча выше уверенности партии",
+      tt_winners and tt_winners[0]["confidence_val"] > 0.6, tt_winners)
+check("теннис: партийных победителей больше нет",
+      not any(str(item.get("target", "")).startswith("set") and
+              item.get("kind") == "winner" for item in tt_preds), tt_preds)
+check("теннис: партийные тоталы остались",
+      any(str(item.get("target", "")).startswith("set") and
+          item.get("kind") == "total" for item in tt_preds), tt_preds)
+check("матч до 3 побед: 0.5 — это 0.5",
+      abs(nn_trainer.NeuralTrainer._tt_match_probability(0.5, 3) - 0.5)
+      < 1e-9)
+check("матч до 2 побед: 0.6 — это 0.648",
+      abs(nn_trainer.NeuralTrainer._tt_match_probability(0.6, 2) - 0.648)
+      < 1e-9)
+check("формат best-of-3 читается из лиги",
+      nn_trainer.NeuralTrainer._tt_sets_to_win(
+          {"league": "До 2-х побед в партиях"}) == 2)
 
 print("\nALL CHECKS PASSED: %d/%d" % (checks[0], checks[1]))

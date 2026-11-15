@@ -647,9 +647,15 @@ function renderNeural(status) {
       }).join('') : '';
       const marks = [];
       if (item.plateau) marks.push('<span class="tag warn">плато</span>');
-      if (item.trained_at) {
-        marks.push('<span class="muted nn-trained">обучено ' +
-          esc(fmtDateTime(item.trained_at)) + '</span>');
+      const checked = item.checked_at || item.trained_at;
+      if (checked) {
+        const checkedLabel = item.last_result === 'rejected'
+          ? 'проверено' : 'обучено';
+        marks.push('<span class="muted nn-trained">' + checkedLabel + ' ' +
+          esc(fmtDateTime(checked)) + '</span>');
+      }
+      if (item.last_result === 'rejected') {
+        marks.push('<span class="tag warn">модель оставлена</span>');
       }
       const busy = !!(item.training ||
         (s.training && (!s.training_sport || s.training_sport === item.sport)));
